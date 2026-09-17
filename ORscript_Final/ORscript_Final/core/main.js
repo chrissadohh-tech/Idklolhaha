@@ -1295,7 +1295,8 @@
       return ` (${label} - which is current, so the bridge is not the problem: check the MCP link inside Studio itself).`;
     }
     return ` (${label}). Captures need or-agent ${AGENT_CAPTURE_MIN}+: rebuild with "cd agent && cargo build --release", ` +
-      `copy agent/target/release/or-agent.exe over the old one and restart it.`;
+      `copy agent/target/release/or-agent.exe over the old one and restart it. ` +
+      `Open http://127.0.0.1:3000/ to see which build is actually running - 1.18.0 = the old committed exe, 1.18.1 = the fixed one.`;
   }
   const bareToolName = (name) => (name && name.includes("/") ? name.split("/").pop() : name) || "";
   // The ONLY sanctioned way to read the active engine outside build()'s closure.
