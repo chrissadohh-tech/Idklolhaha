@@ -585,24 +585,121 @@ function broadcastStatus() {
 }
 
 
-async function ddgSearch(query, limit) {
+// ── Web tools (web_fetch / web_search) ───────────────────────────────────
+// Both ride the SERVICE WORKER's network stack, gated by TWO things:
+//   1) manifest host_permissions (https://*/* already covers every https host), and
+//   2) the extension's OWN CSP - content_security_policy.extension_pages.
+// The old policy was `default-src 'none'` plus a connect-src that listed only
+// localhost and ollama, so EVERY external fetch from here was refused with
+// "Failed to fetch": web_fetch, web_search, the Roblox web APIs and the
+// dev-product lookups all died the same way. manifest.json now allows `https:`
+// in connect-src - if that policy is ever tightened again, these tools and the
+// Roblox account/API calls die with it.
+const WEB_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+// Deliberately NO custom User-Agent. Bot walls (DuckDuckGo, Cloudflare) refuse
+// "OR/1.0"-style clients outright, while Chrome's native UA is exactly what a
+// real navigation sends; a custom UA also gets silently dropped by some builds.
+// Accept / Accept-Language are what a normal browser request carries.
+function webHeaders(extra) {
+  const h = { "Accept": WEB_ACCEPT, "Accept-Language": "en-US,en;q=0.9" };
+  return Object.assign(h, extra || {});
+}
+function decodeEntities(s) {
+  return String(s || "")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCharCode(Number(n)); } catch { return " "; } });
+}
+// Anchor text -> one-line title (tags stripped: engines bold the query terms).
+function cleanText(s) {
+  return decodeEntities(String(s || "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+// Engines wrap outbound links in their own redirectors; unwrap both flavours.
+function stripWrappedUrl(href) {
+  let h = decodeEntities(String(href || "").trim());
+  if (!h) return "";
+  if (h.startsWith("//")) h = "https:" + h;
+  const u = h.match(/[?&]uddg=([^&]+)/);            // DuckDuckGo: /l/?uddg=<encoded>
+  if (u) { try { h = decodeURIComponent(u[1]); } catch {} }
+  const b = h.match(/[?&]u=a1([A-Za-z0-9_\-]+)/);   // Bing: /ck/a?...&u=a1<base64url>
+  if (b) {
+    try {
+      const b64 = b[1].replace(/-/g, "+").replace(/_/g, "/");
+      const latin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+      const utf8 = decodeURIComponent(Array.prototype.map.call(latin,
+        (c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join(""));
+      if (/^https?:\/\//i.test(utf8)) h = utf8;
+    } catch {}
+  }
+  return h;
+}
+const RESULT_HOST_NOISE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:duckduckgo|bing|mojeek)\.com\//i;
+const isResultUrl = (u) => /^https?:\/\//i.test(u) && !RESULT_HOST_NOISE.test(u);
+function pushHit(out, title, href, limit) {
+  const url = stripWrappedUrl(href);
+  if (out.length < limit && title && isResultUrl(url)) out.push({ title, url });
+}
+// DuckDuckGo html: <a rel="nofollow" class="result__a" href="…">Title</a>
+function parseDdgHtml(html, limit) {
+  const out = [];
+  const re = /<a\b[^>]*class="[^"]*result__a[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null && out.length < limit) {
+    pushHit(out, cleanText(m[1]), (m[0].match(/href="([^"]*)"/i) || [])[1], limit);
+  }
+  return out;
+}
+// DuckDuckGo lite: <a rel="nofollow" href="…" class="result-link">Title</a>
+function parseDdgLite(html, limit) {
+  const out = [];
+  const re = /<a\b[^>]*class="[^"]*result-link[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null && out.length < limit) {
+    pushHit(out, cleanText(m[1]), (m[0].match(/href="([^"]*)"/i) || [])[1], limit);
+  }
+  return out;
+}
+// Bing and Mojeek both put each organic result in an <li> whose heading holds
+// the link (<li class="b_algo"><h2><a href=…>, <li><h2><a class="title" …>).
+function parseHeadingAnchors(html, limit) {
+  const out = [];
+  const blocks = html.match(/<li\b[\s\S]*?<\/li>/gi) || [];
+  for (const b of blocks) {
+    if (out.length >= limit) break;
+    const a = b.match(/<h[23][^>]*>[\s\S]*?<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (a) pushHit(out, cleanText(a[2]), a[1], limit);
+  }
+  return out;
+}
+// Fallback chain: DDG's endpoints 403 or serve a bot wall for some IPs/profiles,
+// so try several engines and take the first that parses. A total miss reports
+// every engine's failure, so the next attempt can be debugged instead of guessed.
+const SEARCH_ENGINES = [
+  { id: "ddg-html", url: (q) => "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q), parse: parseDdgHtml },
+  { id: "ddg-lite", url: (q) => "https://lite.duckduckgo.com/lite/?q=" + encodeURIComponent(q), parse: parseDdgLite },
+  { id: "bing",     url: (q) => "https://www.bing.com/search?q=" + encodeURIComponent(q) + "&setlang=en", parse: parseHeadingAnchors },
+  { id: "mojeek",   url: (q) => "https://www.mojeek.com/search?q=" + encodeURIComponent(q), parse: parseHeadingAnchors },
+];
+async function webSearch(query, limit) {
   const q = String(query || "").trim();
   const n = Math.max(1, Math.min(8, Number(limit) || 3));
-  if (!q) return [];
-  const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q);
-  const res = await fetch(url, { headers: { "User-Agent": "OR/1.0" } });
-  if (!res.ok) throw new Error("search HTTP " + res.status);
-  const html = await res.text();
-  const results = [];
-  const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-  let m;
-  while ((m = re.exec(html)) !== null && results.length < n) {
-    let href = m[1]; const title = m[2].trim();
-    const um = href.match(/uddg=([^&]+)/);
-    if (um) try { href = decodeURIComponent(um[1]); } catch {}
-    if (title && href) results.push({ title, url: href });
+  if (!q) return { results: [], engine: "", errors: ["query is required"] };
+  const errors = [];
+  for (const eng of SEARCH_ENGINES) {
+    try {
+      const res = await fetch(eng.url(q), { headers: webHeaders(), credentials: "omit", redirect: "follow" });
+      if (!res.ok) { errors.push(eng.id + ": HTTP " + res.status); continue; }
+      const html = await res.text();
+      const seen = new Set();
+      const results = eng.parse(html, n * 2)
+        .filter((r) => (seen.has(r.url) ? false : seen.add(r.url) && true))
+        .slice(0, n);
+      if (results.length) return { results, engine: eng.id, errors };
+      const wall = /anomaly|captcha|unusual traffic|are you a robot|enable javascript/i.test(html);
+      errors.push(eng.id + ": 0 parsed" + (wall ? " (bot wall)" : ""));
+    } catch (e) { errors.push(eng.id + ": " + String((e && e.message) || e)); }
   }
-  return results;
+  return { results: [], engine: "", errors };
 }
 function htmlToText(html) {
   let s = String(html || "");
@@ -613,8 +710,7 @@ function htmlToText(html) {
   s = s.replace(/<br\s*\/?>/gi, "\n");
   s = s.replace(/<\/(p|div|h[1-6]|li|tr|section|article|header|footer|blockquote|pre|ul|ol|table)>/gi, "\n");
   s = s.replace(/<[^>]+>/g, " ");
-  s = s.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/g, "'");
-  s = s.replace(/&#(\d+);/g, (_, n) => { try { return String.fromCharCode(Number(n)); } catch { return " "; } });
+  s = decodeEntities(s);
   s = s.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
   return s;
 }
@@ -1316,20 +1412,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             const q = String(msg.q || query).trim();
             if (/^https?:\/\//i.test(q)) url = q;
           }
-          let searchNote = "";
+          let searchNote = "", engineId = "";
           if (!url) {
             const q = query || String(msg.q || "").trim();
             if (!q) { sendResponse({ ok: false, error: "url or query is required" }); break; }
-            const hits = await ddgSearch(q, 3);
-            if (!hits.length) { sendResponse({ ok: false, error: "no search results for: " + q }); break; }
-            url = hits[0].url;
-            searchNote = "Searched \"" + q + "\". Top result: " + url + "\n" +
-              hits.map((h, i) => (i+1) + ". " + h.title + " — " + h.url).join("\n") + "\n\n";
+            const found = await webSearch(q, 3);
+            if (!found.results.length) {
+              sendResponse({ ok: false, error: `no search results for "${q}" (${found.errors.join("; ") || "all engines empty"})` });
+              break;
+            }
+            engineId = found.engine;
+            url = found.results[0].url;
+            searchNote = `Searched "${q}" (${found.engine}). Top result: ${url}\n` +
+              found.results.map((h, i) => `${i + 1}. ${h.title} — ${h.url}`).join("\n") + "\n\n";
           }
-          if (!/^https?:\/\//i.test(url)) { sendResponse({ ok: false, error: "url must start with http:// or https://" }); break; }
+          if (!/^https?:\/\//i.test(url)) { sendResponse({ ok: false, error: "url must start with https://" }); break; }
+          // connect-src is https-only, so a plain-http target is upgraded: almost
+          // every site serves https, and a silent "Failed to fetch" for an http://
+          // URL would just look like the bug this code was fixed for.
+          let upgraded = false;
+          if (/^http:\/\//i.test(url) && !/^http:\/\/(127\.0\.0\.1|localhost)(?::|\/|$)/i.test(url)) {
+            url = url.replace(/^http:\/\//i, "https://");
+            upgraded = true;
+          }
           const maxChars = Math.max(500, Math.min(50000, Number(msg.max_chars) || 12000));
-          const res = await fetch(url, { headers: { "User-Agent": "OR/1.0 (web_fetch)", "Accept": "text/html,application/xhtml+xml,application/xml,text/plain,*/*" } });
-          if (!res.ok) { sendResponse({ ok: false, error: `fetch failed HTTP ${res.status}` }); break; }
+          let res;
+          try {
+            res = await fetch(url, { headers: webHeaders(), credentials: "omit", redirect: "follow" });
+          } catch (e) {
+            const hint = upgraded ? " (the extension can only reach https:// hosts — the original URL was http://)" : "";
+            sendResponse({ ok: false, error: `could not reach ${url}: ${String((e && e.message) || e)}${hint}` });
+            break;
+          }
+          if (!res.ok) { sendResponse({ ok: false, error: `fetch failed HTTP ${res.status}${res.statusText ? " " + res.statusText : ""} (${url})` }); break; }
           let text = await res.text();
           const ctype = (res.headers.get("content-type") || "").toLowerCase();
           const looksHtml = /html|xml/.test(ctype) || /^\s*</.test(text);
@@ -1337,7 +1452,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const origLen = text.length;
           const truncated = origLen > maxChars;
           if (truncated) text = text.slice(0, maxChars) + `\n\n…[truncated ${origLen - maxChars} chars]`;
-          sendResponse({ ok: true, text: searchNote + text, truncated, status: res.status, url, content_type: ctype });
+          const out = { ok: true, text: searchNote + text, truncated, status: res.status, url, content_type: ctype };
+          if (engineId) out.engine = engineId;
+          sendResponse(out);
         } catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
         break;
       }
@@ -1346,26 +1463,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const q = String(msg.query || msg.q || "").trim();
           if (!q) { sendResponse({ ok: false, error: "query is required" }); break; }
           const limit = Math.max(1, Math.min(8, Number(msg.limit) || 3));
-          const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q);
-          const res = await fetch(url, { headers: { "User-Agent": "OR/1.0" } });
-          if (!res.ok) { sendResponse({ ok: false, error: `search HTTP ${res.status}` }); break; }
-          const html = await res.text();
-          const results = [];
-          const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-          let m;
-          while ((m = re.exec(html)) !== null && results.length < limit) {
-            let href = m[1]; const title = m[2].trim();
-            const um = href.match(/uddg=([^&]+)/);
-            if (um) try { href = decodeURIComponent(um[1]); } catch {}
-            if (title && href) results.push({ title, url: href });
+          const found = await webSearch(q, limit);
+          if (!found.results.length) {
+            sendResponse({ ok: false, error: `no results for '${q}' (${found.errors.join("; ") || "all engines empty"})` });
+            break;
           }
-          if (!results.length) {
-            const re2 = /class="result__url"[^>]+href="([^"]+)"/g;
-            while ((m = re2.exec(html)) !== null && results.length < limit) results.push({ title: m[1], url: m[1] });
-          }
-          if (!results.length) { sendResponse({ ok: false, error: `no results for '${q}'` }); break; }
-          const txt = results.map((r,i)=> `${i+1}. ${r.title}\n   ${r.url}`).join("\n");
-          sendResponse({ ok: true, text: txt, results, query: q });
+          const txt = found.results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n");
+          sendResponse({ ok: true, text: txt, results: found.results, query: q, engine: found.engine });
         } catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
         break;
       }
@@ -1499,3 +1603,12 @@ chrome.runtime.onStartup.addListener(connect);
 chrome.runtime.onInstalled.addListener(connect);
 
 connect();
+
+// Test hook: the pure web-tool helpers are unit-tested by test-web-tools.js in
+// a plain Node vm (no chrome). Inert in the service worker (no `module`).
+try {
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { webSearch, webHeaders, stripWrappedUrl, cleanText, decodeEntities,
+      htmlToText, parseDdgHtml, parseDdgLite, parseHeadingAnchors, SEARCH_ENGINES };
+  }
+} catch {}

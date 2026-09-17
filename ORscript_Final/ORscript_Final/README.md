@@ -55,6 +55,8 @@ node test-chatgpt.js
 node test-animlib.js
 node test-v111.js
 node test-v112.js
+node test-web-tools.js
+node test-claude.js
 node --check core/main.js && node --check core/config.js && node --check background.js
 cd agent && cargo test
 ```
