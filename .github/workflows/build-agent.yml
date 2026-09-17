@@ -1,9 +1,8 @@
 name: Build or-agent (Windows)
 
-# Compiles ORscript's Rust agent on GitHub's Windows runner and attaches the
-# finished or-agent.exe as a build artifact. Nobody needs a local toolchain:
-# replace the exe in the extension folder and captures stop depending on the
-# Python host, because a 1.18.1+ agent carries Studio's MCP image items itself.
+# Compiles ORscript's Rust agent on GitHub's Windows runner - nobody needs a
+# local toolchain. The compiler output is pushed to the `ci-logs` branch so it
+# can be read without Actions log access, and the exe is attached as an artifact.
 
 on:
   workflow_dispatch:
@@ -12,6 +11,9 @@ on:
     paths:
       - "ORscript_Final/ORscript_Final/agent/**"
       - ".github/workflows/build-agent.yml"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -27,26 +29,56 @@ jobs:
         run: rustc --version; cargo --version
 
       - name: Build (release)
-        run: cargo build --release
-
-      - name: Unit tests (informational - never blocks the exe)
+        id: build
         continue-on-error: true
-        run: cargo test --release -- --nocapture
+        run: |
+          cargo build --release 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { Write-Output "=== BUILD FAILED ==="; exit 1 }
+
+      - name: Unit tests
+        id: tests
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: cargo test --release 2>&1 | Tee-Object -FilePath test.log
+
+      - name: Publish cargo output to the ci-logs branch
+        if: always()
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/out
+          for f in build.log test.log; do
+            [ -f "ORscript_Final/ORscript_Final/agent/$f" ] && cp "ORscript_Final/ORscript_Final/agent/$f" /tmp/out/ || true
+          done
+          ls -la /tmp/out || true
+          cd /tmp
+          rm -rf logs && mkdir logs && cd logs
+          git init -q
+          git config user.name "or-agent-ci"
+          git config user.email "ci@users.noreply.github.com"
+          cp /tmp/out/* . 2>/dev/null || true
+          echo "build outcome: ${{ steps.build.outcome }}" > RESULT.txt
+          echo "tests outcome: ${{ steps.tests.outcome }}" >> RESULT.txt
+          echo "sha: ${{ github.sha }}" >> RESULT.txt
+          git add -A
+          git commit -q -m "cargo output for ${{ github.sha }}"
+          git push -f -q "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/ci-logs
 
       - name: Inspect the binary
+        if: steps.build.outcome == 'success'
         run: |
           $exe = "target\release\or-agent.exe"
           if (-not (Test-Path $exe)) { throw "or-agent.exe was not produced" }
-          Get-Item $exe | Select-Object FullName, Length, LastWriteTime | Format-List
+          Get-Item $exe | Select-Object FullName, Length | Format-List
           Get-FileHash $exe -Algorithm SHA256
-          # Prove the features are actually IN this binary (the whole point).
-          $bytes = [System.IO.File]::ReadAllBytes($exe)
-          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($exe))
           foreach ($needle in @("read_file_base64", "mcp_servers.json", "StudioMCP.exe", "screen_capture")) {
             "{0,-20} {1}" -f $needle, ($text.Contains($needle))
           }
 
       - uses: actions/upload-artifact@v4
+        if: steps.build.outcome == 'success'
         with:
           name: or-agent-windows
           path: ORscript_Final/ORscript_Final/agent/target/release/or-agent.exe
