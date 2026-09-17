@@ -834,6 +834,25 @@ try {
 
 const SHRINK_KEEP_BYTES = 350 * 1024; // below this, the PNG is sent untouched
 
+// The settings menu's "Fast screenshots" toggle writes rs-shot-max; applying it
+// here means the next capture already uses the new size, with no extension
+// reload (the value above is only the startup default).
+try {
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== "local") return;
+    let touched = false;
+    if (changes["rs-shot-max"]) {
+      const m = Number(changes["rs-shot-max"].newValue);
+      if (Number.isFinite(m) && m >= 0) { shotMax = m; touched = true; }
+    }
+    if (changes["rs-shot-quality"]) {
+      const q = Number(changes["rs-shot-quality"].newValue);
+      if (Number.isFinite(q) && q > 0.3 && q <= 1) { shotQuality = q; touched = true; }
+    }
+    if (touched) log(`capture size setting applied - max ${shotMax || "off"}px, quality ${shotQuality}`);
+  });
+} catch {}
+
 function b64ToBytes(b64) {
   const bin = atob(String(b64 || ""));
   const out = new Uint8Array(bin.length);

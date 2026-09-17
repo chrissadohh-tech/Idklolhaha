@@ -39,6 +39,9 @@ const RS = (() => {
     // screen_capture and Blender's get_viewport_screenshot (both also get
     // this chip from the learned image-tool path once they return one).
     if (n === "screen_capture" || n === "get_viewport_screenshot") return "screen";
+    // Viewport framing is Studio-only and changes no instance, so it gets the
+    // Studio chip rather than the generic tool one (the camera_* legacy ops too).
+    if (/^(adjust_camera|set_camera_axis|camera_look_at|camera_subject|camera_set_style)$/.test(n)) return "roblox";
     if (/^animation_/.test(n)) return "generate";
     if (/^generate_/.test(n)) return "generate";
     // AgentScript (LOCAL) engine tools

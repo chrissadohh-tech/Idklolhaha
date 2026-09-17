@@ -247,5 +247,22 @@ if (!py) {
   if (r.status !== 0) console.log((r.stdout || "") + (r.stderr || ""));
 }
 
+// ── the settings toggle (a button, not a code edit) ────────────────────────
+ok("Settings has a Fast screenshots toggle wired to the capture size",
+  mainJS.includes('data-mode="fastshots"') &&
+  mainJS.includes("function setShotFast(v)") &&
+  mainJS.includes('else if(m==="fastshots") setShotFast(!shotFast);'));
+ok("the toggle writes the same key the shrinker reads (ON 1400 / OFF 0)",
+  mainJS.includes('chrome.storage.local.set({ "rs-shot-max": shotFast ? 1400 : 0 })') &&
+  bg.includes('changes["rs-shot-max"]'));
+ok("its state survives a reload (restored from rs-shot-max)",
+  mainJS.includes('const m = Number(r["rs-shot-max"]);') &&
+  mainJS.includes("if (Number.isFinite(m)) shotFast = m > 0;"));
+ok("flipping it applies to the NEXT capture - no extension reload",
+  bg.includes("chrome.storage?.onChanged?.addListener((changes, area) =>") &&
+  bg.includes("capture size setting applied"));
+ok("the toggle explains itself in one line",
+  mainJS.includes("Resize captures over 350 KB to 1400 px before upload"));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);

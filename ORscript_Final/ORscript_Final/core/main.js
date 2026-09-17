@@ -415,6 +415,7 @@
   };
   let orTheme = "night";
   let soundOn = true;
+  let shotFast = true;   // mirrors chrome.storage "rs-shot-max" (0 = originals)
   try {
     chrome.storage.local.get(["rsTheme", "rsSounds"], (r) => {
       if (r && OR_THEMES[r.rsTheme]) orTheme = r.rsTheme;
@@ -451,6 +452,18 @@
     applyOrSkin();
     try { chrome.storage.local.set({ rsTheme: id }); } catch {}
   }
+  // Capture speed: ON = oversized captures are resized before upload (quicker),
+  // OFF = the full-size original is sent. Background reads the same storage key,
+  // so flipping this takes effect immediately - no extension reload.
+  function setShotFast(v) {
+    shotFast = !!v;
+    try { chrome.storage.local.set({ "rs-shot-max": shotFast ? 1400 : 0 }); } catch {}
+    try { buildMenu(); } catch {}
+    toast(shotFast
+      ? "Fast screenshots ON - captures are resized before upload"
+      : "Fast screenshots OFF - sending full-size captures");
+  }
+
   function setSounds(v) {
     soundOn = !!v;
     try { chrome.storage.local.set({ rsSounds: soundOn }); } catch {}
@@ -4288,8 +4301,15 @@
     try { window.__rsAutoDebug = () => autoDebugEnabled; } catch {}
     try { window.__rsMultiAgent = () => multiAgent; } catch {}
     try {
-      chrome.storage.local.get(["rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent"], (r) => {
+      chrome.storage.local.get(["rsShotFast", "rsShotMax", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent"], (r) => {
         if (!r) return;
+        // rs-shot-max is the single source of truth (0 = send originals).
+        {
+          const m = Number(r["rs-shot-max"]);
+          if (Number.isFinite(m)) shotFast = m > 0;
+          else if (typeof r.rsShotFast === "boolean") shotFast = r.rsShotFast;
+          try { buildMenu(); } catch {}
+        }
         if (typeof r.rsAutoFix === "boolean") autoFixEnabled = r.rsAutoFix;
         if (typeof r.rsExtraThinking === "boolean") {
           extraThinking = r.rsExtraThinking;
@@ -4916,6 +4936,14 @@
               <span class="rs-tgl ${soundOn ? "on" : ""}"></span>
             </div>
           </section>
+          <section class="rs-menu-sec">
+            <div class="rs-sec-label"><span>Captures</span></div>
+            <div class="rs-tgl-row" data-mode="fastshots" role="switch" aria-checked="${shotFast}" tabindex="0">
+              <span class="rs-tgl-info"><span class="rs-tgl-name">Fast screenshots</span>
+              <span class="rs-tgl-sub">Resize captures over 350 KB to 1400 px before upload — a screenshot arrives much quicker, still readable. Off = full-size originals.</span></span>
+              <span class="rs-tgl ${shotFast ? "on" : ""}"></span>
+            </div>
+          </section>
             
           <section class="rs-menu-sec" id="rs-checkpoint-sec">
             <div class="rs-sec-label"><span>Recent Checkpoints</span></div>
@@ -5000,6 +5028,7 @@
           else if(m==="plan") setPlanMode(!planMode);
           else if(m==="autodebug") setAutoDebug(!autoDebugEnabled);
           else if(m==="multiagent") setMultiAgent(!multiAgent);
+          else if(m==="fastshots") setShotFast(!shotFast);
           else if(m==="sounds") { setSounds(!soundOn); try { buildMenu(); toast(soundOn ? "Sound effects on" : "Sound effects off"); if (soundOn) playSfx("ok"); } catch {} }
         };
         btn.addEventListener("click", flip);
