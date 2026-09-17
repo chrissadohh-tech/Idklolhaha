@@ -260,7 +260,7 @@ impl McpRuntime {
     }
 
     async fn probe_studio(&mut self) -> anyhow::Result<()> {
-        let text = self.call_tool("get_studio_state", serde_json::json!({})).await?;
+        let text = self.call_tool("get_studio_state", serde_json::json!({})).await?.text;
         if text.is_empty() || text.contains("Unable to find an active Studio instance")
             || text.contains("previously active Studio has disconnected")
             || text.contains("no active Studio") {
@@ -269,18 +269,36 @@ impl McpRuntime {
         Ok(())
     }
 
-    async fn call_tool(&mut self, name: &str, args: serde_json::Value) -> anyhow::Result<String> {
+    async fn call_tool(&mut self, name: &str, args: serde_json::Value) -> anyhow::Result<McpCall> {
         self.ensure().await?;
         let result = self.request("tools/call", serde_json::json!({"name":name, "arguments":args})).await?;
         let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
-        let text = result.get("content").and_then(|v| v.as_array()).map(|items| items.iter().filter_map(|item| item.get("text").and_then(|v| v.as_str())).collect::<Vec<_>>().join("\n")).unwrap_or_else(|| result.to_string());
+        let content = result.get("content").and_then(|v| v.as_array());
+        let text = content.map(|items| items.iter().filter_map(|item| item.get("text").and_then(|v| v.as_str())).collect::<Vec<_>>().join("\n")).unwrap_or_else(|| result.to_string());
+        // Image items are passed through VERBATIM in the MCP shape the browser
+        // already understands: {mimeType, data}. An empty/missing blob is skipped
+        // so a malformed item can never poison the reply.
+        let images = content.map(|items| items.iter().filter_map(|item| {
+            if item.get("type").and_then(|v| v.as_str()) != Some("image") { return None; }
+            let data = item.get("data").and_then(|v| v.as_str())?;
+            if data.is_empty() { return None; }
+            let mime = item.get("mimeType").and_then(|v| v.as_str()).unwrap_or("image/jpeg");
+            Some(serde_json::json!({"mimeType": mime, "data": data}))
+        }).collect::<Vec<_>>()).unwrap_or_default();
         if is_error { anyhow::bail!("{text}"); }
-        Ok(text)
+        Ok(McpCall { text, images })
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ExecResult { id: String, ok: bool, result: String, error: Option<String>, }
+
+/// One MCP tool call's payload: the text content PLUS every image content item.
+/// Studio's `screen_capture` hands the picture back as a
+/// `{"type":"image","data":<base64>,"mimeType":...}` content item (same for
+/// blender-mcp's viewport screenshot); the extension uploads those straight to
+/// the chat, so they must survive this hop instead of being dropped.
+struct McpCall { text: String, images: Vec<serde_json::Value> }
 
 #[cfg(windows)]
 fn port_owner_pid(port: u16) -> Option<u32> {
@@ -598,7 +616,7 @@ async fn roblox_tools(state: &AppState) -> anyhow::Result<Vec<serde_json::Value>
     }
 }
 
-async fn roblox_tool(state: &AppState, name: &str, args: serde_json::Value) -> anyhow::Result<String> {
+async fn roblox_tool(state: &AppState, name: &str, args: serde_json::Value) -> anyhow::Result<McpCall> {
     let _busy = InFlight::enter(&state.mcp_in_flight);
     let mut mcp = state.roblox_mcp.lock().await;
     match mcp.call_tool(name, args.clone()).await {
@@ -788,13 +806,13 @@ async fn handle_legacy_ws(ws_stream: tokio_tungstenite::WebSocketStream<tokio::n
                         let eng = engine.clone();
                         let tx = out_tx.clone();
                         tokio::spawn(async move {
-                            let outcome = match eng.as_str() {
-                                "local" => { workspace::dispatch(&state2.workspace, &name, args).await.map_err(anyhow::Error::msg) }
-                                "roblox" => roblox_tool(&state2, &name, args).await,
+                            let outcome: anyhow::Result<(String, Vec<serde_json::Value>)> = match eng.as_str() {
+                                "local" => { workspace::dispatch(&state2.workspace, &name, args).await.map(|t| (t, Vec::new())).map_err(anyhow::Error::msg) }
+                                "roblox" => roblox_tool(&state2, &name, args).await.map(|c| (c.text, c.images)),
                                 _ => Err(anyhow::anyhow!("unknown engine")),
                             };
                             let response = match outcome {
-                                Ok(text) => serde_json::json!({"type":"tool_result","id":id,"ok":true,"text":text}),
+                                Ok((text, images)) => serde_json::json!({"type":"tool_result","id":id,"ok":true,"text":text,"images":images}),
                                 Err(error) => serde_json::json!({"type":"tool_result","id":id,"ok":false,"kind":"execution","error":error.to_string()}),
                             };
                             let _ = tx.send(response.to_string());

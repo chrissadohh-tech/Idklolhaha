@@ -119,7 +119,7 @@ const BLENDER_TOOL_NAMES = new Set([
   "get_scene_info", "get_object_info", "execute_blender_code", "get_viewport_screenshot",
   "blender_export_fbx", "blender_import_fbx", "blender_export_obj", "blender_import_obj",
   "blender_mesh_dump", "blender_send_to_studio", "blender_execute_code",
-  "blender_get_scene_info", "blender_get_object_info", "blender_screenshot",
+  "blender_get_scene_info", "blender_get_object_info",
   "export_blender_fbx", "import_blender_fbx",
 ]);
 function btool(name, description, props, required) {
@@ -999,7 +999,7 @@ async function blenderPayload(name, args) {
   if (bare === "get_scene_info" || bare === "blender_get_scene_info") return { type: "get_scene_info", params: {} };
   if (bare === "get_object_info" || bare === "blender_get_object_info") return { type: "get_object_info", params: { name: a.name || a.object_name || "" } };
   if (bare === "execute_blender_code" || bare === "execute_code" || bare === "blender_execute_code") return { type: "execute_code", params: { code: wrapBlenderUserCode(a.code || "") } };
-  if (bare === "get_viewport_screenshot" || bare === "blender_screenshot") {
+  if (bare === "get_viewport_screenshot") {
     let shot = "or_blender_shot.png";
     const root = await agentWorkspaceRoot();
     if (root) shot = root.replace(/[\\/]+$/, "") + "/or_blender_shot.png";
@@ -1022,6 +1022,39 @@ async function ensureBlenderScripts() {
   await localWrite("blender_once.py", py);
   await localWrite("blender_once.ps1", ps);
   blenderScriptsReady = true;
+}
+
+// Blender viewport captures arrive as a FILE, so read it back through the
+// agent's read_file_base64 (read_file is line-numbered text and would mangle
+// binary). Paths must be workspace-relative: accept either the absolute path we
+// handed the addon (reduced to a relative one when it lives under the root) or a
+// bare name. Returns {mimeType, data} or null.
+async function readWorkspaceImage(filePath) {
+  let rel = String(filePath || "").trim();
+  if (!rel) return null;
+  try {
+    const root = (await agentWorkspaceRoot() || "").replace(/[\\/]+$/, "");
+    if (root && rel.toLowerCase().startsWith(root.toLowerCase())) {
+      rel = rel.slice(root.length).replace(/^[\\/]+/, "");
+    }
+  } catch {}
+  const cands = [...new Set([rel, rel.split(/[\\/]/).pop()])].filter(Boolean);
+  for (const cand of cands) {
+    try {
+      const r = await sendLocalEngine({
+        type: "call_tool", name: "read_file_base64", arguments: { path: cand },
+      }, 30000);
+      if (!r || !r.ok || !r.text) continue;
+      const j = JSON.parse(r.text);
+      if (!j || !j.data) continue;
+      // The PNG was only a hand-off file: drop it once its bytes are in hand so
+      // the workspace doesn't accumulate screenshots (a failed read keeps it for
+      // debugging). Best-effort - the capture is already safe.
+      try { await sendLocalEngine({ type: "call_tool", name: "delete_path", arguments: { path: cand } }, 15000); } catch {}
+      return { mimeType: j.mimeType || "image/png", data: String(j.data) };
+    } catch {}
+  }
+  return null;
 }
 
 let blenderCallLock = Promise.resolve();
@@ -1075,6 +1108,18 @@ async function blenderCall(name, args, timeout) {
       return { ok: false, error: msg };
     }
     let result = (data && Object.prototype.hasOwnProperty.call(data, "result")) ? data.result : data;
+    // Studio's screen_capture returns the picture INLINE in the MCP result, but
+    // the blender-mcp addon answers get_viewport_screenshot by WRITING a PNG to
+    // the path we passed (see blenderPayload) and reporting only the filepath -
+    // so this is where the Blender half of the capture feature is completed:
+    // pull those bytes back as base64 and hand them over in the same
+    // {mimeType, data} shape the providers already upload. Snapshot the path
+    // BEFORE the status/mesh reading below can replace `result`.
+    let shotFile = "";
+    try {
+      const cand = result && (result.filepath || result.path || result.file);
+      if (typeof cand === "string" && /\.(png|jpe?g|webp)$/i.test(cand)) shotFile = cand;
+    } catch {}
     const rawText = typeof result === "string" ? result : JSON.stringify(result);
     const marker = String(rawText).indexOf("OR_MESH_JSON:");
     if (marker >= 0) {
@@ -1109,7 +1154,12 @@ async function blenderCall(name, args, timeout) {
     }
     if (meshes && meshes.length && result && typeof result === "object") result.meshes = meshes;
     let textOut = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-    return { ok: true, text: textOut, images: [], meshFile: mf, filepath: result && result.filepath, meshes: meshes || undefined };
+    const images = [];
+    if (shotFile) {
+      const img = await readWorkspaceImage(shotFile);
+      if (img) images.push(img);
+    }
+    return { ok: true, text: textOut, images, meshFile: mf, filepath: result && result.filepath, meshes: meshes || undefined };
   };
   const prev = blenderCallLock;
   let release;
@@ -1563,28 +1613,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "list_dev_products": {
         try { sendResponse(await robloxListDevProducts(msg)); }
         catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
-        break;
-      }
-      case "capture_tab": {
-        try {
-          const windowId = (_sender.tab && _sender.tab.windowId) || undefined;
-          const dataUrl = await new Promise((resolve, reject) => {
-            try {
-              chrome.tabs.captureVisibleTab(windowId, { format: "png" }, (url) => {
-                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-                else resolve(url);
-              });
-            } catch (e) { reject(e); }
-          });
-          const m = String(dataUrl || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-          if (!m) {
-            sendResponse({ ok: false, error: "tab capture returned no image" });
-            break;
-          }
-          sendResponse({ ok: true, images: [{ mimeType: m[1], data: m[2] }] });
-        } catch (e) {
-          sendResponse({ ok: false, error: String(e && e.message || e) });
-        }
         break;
       }
       default:

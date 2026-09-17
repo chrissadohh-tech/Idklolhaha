@@ -74,12 +74,6 @@
     script_lint: "script_analysis",
     lint_script: "script_analysis",
     lint_scripts: "script_analysis",
-    screenshot: "or_screenshot",
-    take_screenshot: "or_screenshot",
-    screenshot_send: "or_screenshot",
-    send_screenshot: "or_screenshot",
-    capture_screenshot: "or_screenshot",
-    or_screen_shot: "or_screenshot",
     debug_run: "or_debug",
     debug_console: "or_debug",
     auto_debug: "or_debug",
@@ -1959,51 +1953,6 @@
     // Virtual command: list available commands with full details. Defaults to
     // the primary server for the *current* engine — Roblox when RS/AN, AgentScript when AS.
     // A DIFFERENT server's tools only show up if the model asks via {"server": "<id>"}.
-        if (name === "or_screenshot" || name === "screenshot") {
-      if (!P.supportsVision) {
-        return "ERROR: this assistant cannot see images, so or_screenshot cannot send a shot back to you. Open a vision-capable chat (DeepSeek, Gemini, GLM, Qwen, Meta AI, Freebuff, Ox Alpha, Use AI) and call or_screenshot again.";
-      }
-      const target = String(args.target || args.source || "auto").toLowerCase();
-      const shots = [];
-      const notes = [];
-      const tryMcp = async (toolName, label) => {
-        try {
-          const r = await bg({ type: "call_tool", name: toolName, arguments: args, timeout: 45000 });
-          if (r && r.ok && r.images && r.images.length) {
-            shots.push(...r.images);
-            notes.push(label + ": " + r.images.length + " image(s)");
-            return true;
-          }
-          if (r && !r.ok) notes.push(label + ": " + String(r.error || "failed").slice(0, 160));
-        } catch (e) {
-          notes.push(label + ": " + String(e && e.message || e).slice(0, 160));
-        }
-        return false;
-      };
-      const wantStudio = target === "auto" || target === "studio" || target === "roblox" || target === "viewport";
-      const wantBlend = target === "auto" || target === "blender";
-      const wantTab = target === "tab" || target === "chat" || target === "page" || target === "self";
-      if (wantStudio) await tryMcp("screen_capture", "studio");
-      if (wantBlend && !shots.length) await tryMcp("get_viewport_screenshot", "blender");
-      if (wantTab || (target === "auto" && !shots.length)) {
-        try {
-          const r = await bg({ type: "capture_tab" });
-          if (r && r.ok && r.images && r.images.length) {
-            shots.push(...r.images);
-            notes.push("tab: " + r.images.length + " image(s)");
-          } else if (r && !r.ok) notes.push("tab: " + String(r.error || "failed").slice(0, 160));
-        } catch (e) {
-          notes.push("tab: " + String(e && e.message || e).slice(0, 160));
-        }
-      }
-      if (!shots.length) {
-        return "ERROR: or_screenshot captured nothing. " + (notes.join(" | ") || "Studio MCP screen_capture and tab capture both failed.") + " Connect Studio MCP or pass {\"target\":\"tab\"}.";
-      }
-      ui.showImages(shots, "or_screenshot");
-      A.pendingImages = shots;
-      const caption = notes.join("; ") || (shots.length + " image(s) captured");
-      return "Output of 'or_screenshot':\n" + caption + "\n(The image is attached to THIS message — you can see it directly. Analyse it and continue.)";
-    }
     if (name === "or_debug" || name === "debug_run" || name === "debug_console") {
       const code = [
         "local hs=game:GetService(\"HttpService\")",
@@ -2144,7 +2093,7 @@
       const animLines = requested === "roblox" ? RSAnim.describeCommands() : [];
       const skillLines = (requested === "roblox" && typeof RobloxScriptSkills !== "undefined") ? RobloxScriptSkills.describeCommands() : [];
       const agentLines = (requested === "local" && typeof AgentScriptSkills !== "undefined") ? AgentScriptSkills.describeCommands() : [];
-      const webLines = [`— OR Status: or_status {} — live engine, work mode, extra thinking, bridge, blender. Call this if you are unsure which mode you are in.`, `— Web Tools (bridge-level, no Studio needed): web_fetch {url?, query?, max_chars?} — fetch a URL, OR pass query to search the web then fetch the top result; web_search {query, limit?} — DuckDuckGo titles+URLs`, `— Screenshot: or_screenshot {target?: auto|studio|tab|blender} — take a screenshot of Studio, this chat tab, or Blender and attach it to your next message so you can see it. Aliases: screenshot, take_screenshot, send_screenshot.`, `— Debugger: or_debug {} — Studio LogService errors/warnings. Automatic Debugger (Settings) appends new errors after mutating commands.`, `— Multi-Agent: or_agent {role: planner|builder|reviewer|debugger, task?} — hand off to a specialist. Enable Multi-Agent in Settings.`, `— Developer Products: developer_product_create {name, price, description?, reward?} — create a real Roblox Developer Product on this published universe (sign into roblox.com in Chrome). developer_product_list {} lists them. Aliases: create_developer_product, create_dev_product.`];
+      const webLines = [`— OR Status: or_status {} — live engine, work mode, extra thinking, bridge, blender. Call this if you are unsure which mode you are in.`, `— Web Tools (bridge-level, no Studio needed): web_fetch {url?, query?, max_chars?} — fetch a URL, OR pass query to search the web then fetch the top result; web_search {query, limit?} — DuckDuckGo titles+URLs`, `— Screenshots: screen_capture {} — Roblox Studio viewport; get_viewport_screenshot {max_size?} — Blender viewport (Connect Blender must be on). Either one attaches the image to your next message so you can see it.`, `— Debugger: or_debug {} — Studio LogService errors/warnings. Automatic Debugger (Settings) appends new errors after mutating commands.`, `— Multi-Agent: or_agent {role: planner|builder|reviewer|debugger, task?} — hand off to a specialist. Enable Multi-Agent in Settings.`, `— Developer Products: developer_product_create {name, price, description?, reward?} — create a real Roblox Developer Product on this published universe (sign into roblox.com in Chrome). developer_product_list {} lists them. Aliases: create_developer_product, create_dev_product.`];
       const virtualCount = animLines.length + skillLines.length + agentLines.length + webLines.length;
       return `Output of '${name}':\n${requested} commands (${scoped.length}${virtualCount ?  ` + ${virtualCount} OR virtual tools` : ""}):\n\n${lines.join("\n\n")}${animLines.length ?  "\n\n" + animLines.join("\n\n") : ""}${skillLines.length ?  "\n\n" + skillLines.join("\n\n") : ""}${agentLines.length ?  "\n\n" + agentLines.join("\n\n") : ""}\n\n${webLines.join("\n")}`;
     }
@@ -2187,7 +2136,7 @@
       } } catch {}
       return res;
     }
-    const BLENDER_OPS = new Set(["get_scene_info","get_object_info","execute_blender_code","get_viewport_screenshot","blender_export_fbx","blender_execute_code","blender_screenshot"]);
+    const BLENDER_OPS = new Set(["get_scene_info","get_object_info","execute_blender_code","get_viewport_screenshot","blender_export_fbx","blender_execute_code"]);
     if (BLENDER_OPS.has(bareName) || /^blender_/.test(bareName)) {
       if (!(A.bridge && A.bridge.blender)) {
         let st = await bg({ type: "blender_status" });

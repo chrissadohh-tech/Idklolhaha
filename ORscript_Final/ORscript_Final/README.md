@@ -39,9 +39,15 @@ Large `execute_luau` scripts are auto-chunked around 24 KB so Studio's parser ne
 
 ## Agent
 
-- Native crate: `agent/` (`or-agent` 1.13.0). Status window, MCP helper spawn, outbound WS channel so ping/status keep flowing during a 20 s `execute_luau`.
+- Native crate: `agent/` (`or-agent` 1.18.1). Status window, MCP helper spawn, outbound WS channel so ping/status keep flowing during a 20 s `execute_luau`.
+- **Rebuild it after changing `agent/src/*.rs`** (screenshots depend on it — the bridge now carries MCP image content items through to the chat):
+  ```bash
+  cd agent && cargo build --release
+  ```
+  then copy `agent/target/release/or-agent.exe` over the one in this folder, or run it from there.
 - Service worker skips stale-socket reconnect and MCP heal while a `call_tool` is in flight (the 25 s stale window used to kill long tools).
 - 30 Studio skills, a 24-command animation suite, AgentScript file/terminal tools.
+- **Captures** are the providers' own: `screen_capture` (Roblox Studio viewport) and `get_viewport_screenshot` (Blender viewport). The image is attached to the model's next message; Blender's is written to `or_blender_shot.png` and read back as base64 by the agent.
 - Personas (Builder / Scripter / Animator / Fixer), Extra Thinking, Forge GUI, Image → Model, auto-fix playtest errors.
 
 ---

@@ -21,6 +21,21 @@ ok("bg does not rememberBlender before success", !bg.includes("rememberBlender")
 ok("bg heartbeat does not restart blender", !bg.includes("ensureBlenderShim") && !bg.includes("blenderHealth"));
 ok("bg routes blender tools only when connected", bg.includes("blenderAddon && isBlenderToolName"));
 ok("bg sendLocalEngine for one-shot", bg.includes("sendLocalEngine") && bg.includes("blender_once."));
+// ── viewport captures: the addon writes a PNG, the extension must READ IT BACK ─
+const rs = fs.readFileSync(path.join(root, "agent/src/main.rs"), "utf8");
+const ws = fs.readFileSync(path.join(root, "agent/src/workspace.rs"), "utf8");
+ok("only the addon's own capture tools exist", bg.includes('"get_viewport_screenshot"') &&
+  !bg.includes("blender_screenshot") && !bg.includes("capture_tab"));
+ok("blender shot is read back as base64 (not a text read)", bg.includes("read_file_base64") &&
+  bg.includes("async function readWorkspaceImage") && bg.includes('shotFile = cand') &&
+  bg.includes("(png|jpe?g|webp)$/i.test(cand)"));
+ok("blenderCall returns the image instead of hardcoded []", bg.includes("images.push(img)") &&
+  !/images: \[\], meshFile: mf/.test(bg));
+ok("agent read_file_base64 is binary-safe + sandboxed", ws.includes("pub async fn tool_read_file_base64") &&
+  ws.includes("fn base64(bytes: &[u8]) -> String") && ws.includes("MAX_IMAGE_BYTES") &&
+  ws.includes('"read_file_base64" => tool_read_file_base64') && !ws.includes('{"name": "read_file_base64"'));
+ok("agent keeps MCP image content items", rs.includes("struct McpCall") &&
+  rs.includes('!= Some("image")') && rs.includes('"images":images'));
 ok("main connect uses blender_connect", main.includes('type: "blender_connect"') && !main.includes("uvx blender-mcp"));
 ok("main does not intercept blender tools when disconnected",
   main.includes("A.bridge && A.bridge.blender") && !main.includes("Blender is not connected. Click Connect Blender in the OR menu"));
