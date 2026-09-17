@@ -1,0 +1,22 @@
+2026-09-15T11:50:30.512440Z  INFO or_agent         : === OR v1.18.0 start (sim=                    false, pid=36524) ===
+2026-09-15T11:50:30.513073Z  INFO or_agent         ::workspace: workspace root: \\?\C:\Users\Chris\ORWorkspace
+2026-09-15T11:50:30.889217Z  INFO or_agent         : Roblox Studio bridge listening on http://127.0.0.1:3000 (WS /ws)
+2026-09-15T11:50:30.889367Z  INFO or_agent         : Legacy WS on ws://127.0.0.1:17613 (roblox), 17615 (local)  and 17615 (AgentScript FS: C:\Users\Chris\ORWorkspace)
+2026-09-15T11:50:30.889966Z  INFO or_agent         : Boot completed in 377ms
+2026-09-15T11:50:32.291091Z  INFO or_agent         : window closed — killing MCP helper tree and exiting
+2026-09-15T11:50:37.414304Z  INFO or_agent         : === OR v1.18.0 start (sim=                    false, pid=32504) ===
+2026-09-15T11:50:37.414745Z  INFO or_agent         ::workspace: workspace root: \\?\C:\Users\Chris\ORWorkspace
+2026-09-15T11:50:37.610431Z  INFO or_agent         : Roblox Studio bridge listening on http://127.0.0.1:3000 (WS /ws)
+2026-09-15T11:50:37.610479Z  INFO or_agent         : Legacy WS on ws://127.0.0.1:17613 (roblox), 17615 (local)  and 17615 (AgentScript FS: C:\Users\Chris\ORWorkspace)
+2026-09-15T11:50:37.611010Z  INFO or_agent         : Boot completed in 196ms
+2026-09-15T11:50:55.354037Z  INFO or_agent         : legacy WS [roblox] client connected
+2026-09-15T11:50:55.391837Z  INFO or_agent         : MCP helper spawned OK
+2026-09-15T11:51:05.372211Z  INFO or_agent         : studio_status [roblox]: OFFLINE
+2026-09-15T11:53:10.751276Z  INFO or_agent         : studio_status [roblox]: CONNECTED
+2026-09-15T12:43:59.989046Z  INFO or_agent         : studio_status [roblox]: OFFLINE
+2026-09-15T12:44:35.389477Z  INFO or_agent         : studio_status [roblox]: CONNECTED
+2026-09-15T13:24:45.404607Z  INFO or_agent         : studio_status [roblox]: OFFLINE
+2026-09-15T13:26:48.474617Z  INFO or_agent         : studio_status [roblox]: CONNECTED
+2026-09-15T13:30:45.606722Z  INFO or_agent         : studio_status [roblox]: OFFLINE
+2026-09-15T13:30:47.001684Z  INFO or_agent         : window closed — killing MCP helper tree and exiting
+2026-09-15T13:30:47.001808Z  INFO or_agent         : MCP runtime reset — killing previous helper process

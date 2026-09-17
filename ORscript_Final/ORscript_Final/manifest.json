@@ -1,0 +1,434 @@
+{
+  "manifest_version": 3,
+  "name": "OR Free × Studio Agent [BETA]",
+  "version": "1.18.0",
+  "minimum_chrome_version": "111",
+  "description": "Turn ChatGPT, Claude, DeepSeek, Gemini, Kimi, GLM, Qwen, Arena, Freebuff, Meta AI, Copilot, Crax GPT, Use AI, Ox Alpha or Ollama into a Roblox Studio / AgentScript agent. Two engines (RS/AS), work modes, agent personas, image-to-model, auto-fix playtest errors, Extra Thinking, and a UI Creator.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "https://deepseek.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://www.claude.com/*",
+    "https://claude.com/*",
+    "https://www.claude.ai/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://www.kimi.com/*",
+    "https://kimi.com/*",
+    "https://kimi.ai/*",
+    "https://www.kimi.ai/*",
+    "https://chat.z.ai/*",
+    "https://chat.qwen.ai/*",
+    "https://arena.ai/*",
+    "https://freebuff.ai/*",
+    "https://www.freebuff.ai/*",
+    "https://freebuff.com/*",
+    "https://www.freebuff.com/*",
+    "https://*/*",
+    "https://www.meta.ai/*",
+    "https://meta.ai/*",
+    "https://github.com/copilot",
+    "https://github.com/copilot/*",
+    "https://copilot.microsoft.com/*",
+    "https://m365.cloud.microsoft/*",
+    "https://gpt.crax.lol/*",
+    "https://use.ai/*",
+    "https://www.use.ai/*",
+    "https://oxalpha.com/*",
+    "https://www.oxalpha.com/*",
+    "https://oxalpha.org/*",
+    "https://www.oxalpha.org/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "https://ollama.com/*",
+    "https://*.ollama.com/*",
+    "https://*.roblox.com/*",
+    "https://roblox.com/*",
+    "https://www.roblox.com/*",
+    "https://apis.roblox.com/*",
+    "https://develop.roblox.com/*",
+    "https://auth.roblox.com/*",
+    "https://users.roblox.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* http://localhost:* https://ollama.com https://*.ollama.com"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["ui/*.jpg", "icon.png"],
+      "matches": [
+        "https://*/*",
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OR — RS/AS — 1.17.25 BETA",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.deepseek.com/*",
+        "https://deepseek.com/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/deepseek.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "providers/chatgpt-cm.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/chatgpt.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://www.claude.ai/*",
+        "https://claude.com/*",
+        "https://www.claude.com/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/claude.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/gemini.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.kimi.com/*",
+        "https://kimi.com/*",
+        "https://kimi.ai/*",
+        "https://www.kimi.ai/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/kimi.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.z.ai/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/glm.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://arena.ai/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/arena.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://freebuff.ai/*",
+        "https://www.freebuff.ai/*",
+        "https://freebuff.com/*",
+        "https://www.freebuff.com/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/freebuff.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.meta.ai/*",
+        "https://meta.ai/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/meta.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.qwen.ai/*"
+      ],
+      "js": [
+        "providers/qwen-net.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://chat.qwen.ai/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/qwen.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://github.com/copilot",
+        "https://github.com/copilot/*",
+        "https://copilot.microsoft.com/*",
+        "https://m365.cloud.microsoft/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/copilot.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://gpt.crax.lol/*"
+      ],
+      "js": [
+        "providers/crax-net.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://gpt.crax.lol/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/crax.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://use.ai/*",
+        "https://www.use.ai/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/useai.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://oxalpha.com/*",
+        "https://www.oxalpha.com/*",
+        "https://oxalpha.org/*",
+        "https://www.oxalpha.org/*"
+      ],
+      "js": [
+        "core/config.js",
+        "core/parser.js",
+        "core/animlib.js",
+        "core/studio_skills.js",
+        "core/studio_daily.js",
+        "core/studio_gui.js",
+        "core/studio_plus.js",
+        "core/agent_skills.js",
+        "providers/oxalpha.js",
+        "core/main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
