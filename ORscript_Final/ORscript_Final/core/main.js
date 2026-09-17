@@ -1288,6 +1288,27 @@
     for (let i = 0; i < 3; i++) if (cur[i] !== tgt[i]) return cur[i] < tgt[i];
     return false;
   }
+  // A capture that answers "ok" with NO text and NO image means the picture died
+  // on its way to us. WHICH fix applies is visible from the tool list: the
+  // Python host (Start OR Agent.bat) advertises or_host_read_image, so
+  // Studio's 27 tools become 28. No host + an old agent = the bytes are being
+  // dropped inside or-agent.exe; host present = Studio itself sent no picture.
+  function captureFailureHint(name) {
+    const n = A.toolNames.size;
+    const hostUp = A.toolNames.has("or_host_read_image");
+    if (!hostUp) {
+      ui.banner("warn", "Studio captures need the Python host",
+        'Close OR, then start it with "Start OR Agent.bat" instead of or-agent.exe.');
+      return `ERROR calling '${name}': the capture came back with no text and no image. ` +
+        `The Python Studio host is not in the loop (TOOLS ${n}, needs 28), so or-agent.exe dropped the picture: ` +
+        `it was started without the host, or the previous agent still owned port 3000. Close OR and run ` +
+        `"Start OR Agent.bat" (it closes a running agent first and prints what it found), then call ${name} again.`;
+    }
+    return `ERROR calling '${name}': the capture came back with no text and no image. ` +
+      `The Python host IS running (TOOLS ${n}), so Studio itself returned no picture: open the place in Studio and check ` +
+      `Assistant -> Manage MCP Servers -> "Enable Studio as MCP Server", then call ${name} again.`;
+  }
+
   function agentBuildNote() {
     const v = String((A.bridge && A.bridge.agent_version) || "");
     const label = v ? `agent v${v}` : "agent version unknown (an older build)";
@@ -2331,8 +2352,7 @@
       // back an empty string. Name the running build instead of printing a bare
       // "(tool returned an empty result)" - that message sent us hunting twice.
       if (VISION_TOOLS.has(bareName) && !String(r.text || "").trim()) {
-        return `ERROR calling '${name}': the capture came back with no text and no image.` +
-          agentBuildNote() + ` Then call ${name} again.`;
+        return captureFailureHint(name);
       }
       const text = r.text && r.text.length ?  r.text : "(tool returned an empty result)";
       return `Output of '${name}':\n${text}`;

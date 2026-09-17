@@ -106,7 +106,10 @@ const fbSrc = fs.readFileSync(path.join(root, "providers/freebuff.js"), "utf8");
 ok("freebuff slow-chat not treated as hung", fbSrc.includes("PRESTART_MS: 180000") && fbSrc.includes("GEN_IDLE_MS: 14000") && fbSrc.includes("GEN_STOP_GRACE_MS: 12000") && fbSrc.includes("function busyChrome") && fbSrc.includes("return true;") && mainSrc.includes("T.PRESTART_MS") && mainSrc.includes("T.GEN_STOP_GRACE_MS") && !fbSrc.includes("unstableWarning"));
 ok("capture guards live in the RIGHT branch (Studio vs Blender)",
   (() => {
-    const iGuard = mainSrc.indexOf("the capture came back with no text and no image");
+    // The Studio guard is now a call into captureFailureHint() (which also tells
+    // the user WHICH fix applies); what matters is that the CALL sits in the
+    // Studio branch and the Blender note sits in the Blender branch.
+    const iGuard = mainSrc.indexOf("return captureFailureHint(name);");
     const iStash = mainSrc.indexOf("images.stashed");            // Studio generic branch
     const iOrphan = mainSrc.indexOf("// Orphaned content script"); // its end
     const iBlenderHdr = mainSrc.indexOf("const BLENDER_OPS = new Set(");

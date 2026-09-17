@@ -63,17 +63,43 @@ ok("host tools are merged into tools/list and answered locally",
 ok("its own results go through the same image rewrite",
   HOST.includes("host_reply, converted = rewrite_images("));
 ok("a non-image is refused, never inlined", HOST.includes("refusing to inline it"));
+ok("leftover StudioMCP.exe is cleaned (ZeroScript's 'empty captures' fix)",
+  HOST.includes("STUDIO_MCP_PORT = 13469") && HOST.includes("def clean_leftovers(") &&
+  HOST.includes("def port_owner_pid(") && HOST.includes("def _pid_is_studio_mcp(") &&
+  HOST.includes("def studio_app_running(") &&
+  HOST.includes('taskkill", "/F", "/IM", "StudioMCP.exe"') &&
+  HOST.includes("self.last_killed = clean_leftovers(self._pid)"));
+ok("a capture failure says WHICH fix applies (tool count, not a guess)",
+  mainJS.includes("function captureFailureHint(") &&
+  mainJS.includes("A.toolNames.has(\"or_host_read_image\")") &&
+  mainJS.includes("TOOLS ${n}, needs 28") &&
+  mainJS.includes("Start OR Agent.bat"));
 
 // ── the launcher ────────────────────────────────────────────────────────────
+ok("launcher only ever lets ONE agent own the bridge port (env var applies)",
+  BAT.includes("taskkill /F /IM or-agent.exe") &&
+  BAT.includes("keep port 3000") &&
+  BAT.includes("find /i \"or-agent.exe\""));
+ok("launcher finds Python the way ZeroScript's start.bat does",
+  BAT.includes("for %%C in (\"py -3\" \"python\")") &&
+  BAT.includes(":validate_py") && BAT.includes("dir /b /ad /o-n") &&
+  BAT.includes("%LOCALAPPDATA%\\Programs\\Python") &&
+  BAT.includes("--version"));
 ok("launcher sets OR_MCP_COMMAND to the host (what the exe reads)",
-  BAT.includes("set \"OR_MCP_COMMAND=%PY% studio_mcp_host.py\""));
-ok("launcher probes py/python/python3 and explains itself when none exist",
-  BAT.includes("for %%C in (py python python3)") && BAT.includes("import sys") &&
-  BAT.includes("python.org"));
+  BAT.includes("set \"OR_MCP_COMMAND=%PY% %HOST%\""));
+ok("a Python path with spaces goes through a cmd wrapper (the exe splits on spaces)",
+  BAT.includes("or_mcp_host.bat") && BAT.includes("cmd /C or_mcp_host.bat") &&
+  BAT.includes("find \" \""));
+ok("launcher verifies before and after: --check, then waits for port 3000",
+  BAT.includes("%HOST% --check") && BAT.includes("netstat -ano -p TCP") &&
+  BAT.includes(":3000"));
+ok("launcher is readable when it fails (pause) and points at the log",
+  BAT.includes("pause") && BAT.includes("studio_mcp_host.log") &&
+  BAT.includes("Add python.exe to PATH"));
 ok("launcher still starts or-agent.exe, from its own folder",
-  BAT.includes("cd /d \"%~dp0\"") && BAT.includes("start \"\" \"%~dp0or-agent.exe\""));
-ok("launcher shows the discovery result before starting",
-  BAT.includes("studio_mcp_host.py --check"));
+  BAT.includes("cd /d \"%~dp0\"") && BAT.includes("start \"\" \"%CD%\\or-agent.exe\""));
+ok("launcher tells the user what TOOLS should read afterwards",
+  BAT.includes("TOOLS should now read 28"));
 
 // ── the extension-side decoder ──────────────────────────────────────────────
 ok("background decodes the markers once, for every tool funnel",

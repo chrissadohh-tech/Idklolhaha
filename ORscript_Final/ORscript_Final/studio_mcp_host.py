@@ -165,6 +165,99 @@ def child_command(path):
     return [path]
 
 
+# ── leftover StudioMCP.exe cleanup (ZeroScript's live-diagnosed fix) ────────
+# A StudioMCP.exe left over from an earlier session keeps LISTENING on Studio's
+# MCP port, and any StudioMCP started afterwards only talks to that zombie:
+# Studio never re-registers and calls come back empty. Their bridge goes out of
+# its way to clean these up, so the host does too. Only unambiguously stale ones
+# are killed: a leftover while no Studio is running at all, or one holding
+# Studio's MCP port that is not our own child.
+
+STUDIO_MCP_PORT = 13469
+STUDIO_IMAGES = ("RobloxStudioBeta.exe", "RobloxStudio.exe")
+
+
+def _run(args, timeout=8):
+    kwargs = {"capture_output": True, "text": True, "encoding": "utf-8",
+              "errors": "replace", "timeout": timeout}
+    if os.name == "nt":
+        kwargs["creationflags"] = CREATE_NO_WINDOW
+    return subprocess.run(args, **kwargs)
+
+
+def _tasklist_has(image):
+    """True / False, or None when it cannot be determined."""
+    if os.name != "nt":
+        return False
+    try:
+        return image in _run(["tasklist", "/FI", "IMAGENAME eq " + image]).stdout
+    except Exception:
+        return None
+
+
+def studio_app_running():
+    """Roblox Studio itself - never StudioMCP.exe."""
+    unknown = False
+    for image in STUDIO_IMAGES:
+        got = _tasklist_has(image)
+        if got:
+            return True
+        if got is None:
+            unknown = True
+    return None if unknown else False
+
+
+def port_owner_pid(port):
+    if os.name != "nt":
+        return None
+    try:
+        out = _run(["netstat", "-ano", "-p", "TCP"]).stdout
+    except Exception:
+        return None
+    needle = ":%d" % port
+    for line in out.splitlines():
+        parts = line.split()
+        if (len(parts) >= 5 and parts[0].upper() == "TCP"
+                and parts[3].upper() == "LISTENING" and parts[1].endswith(needle)):
+            try:
+                return int(parts[4])
+            except ValueError:
+                return None
+    return None
+
+
+def _pid_is_studio_mcp(pid):
+    if os.name != "nt":
+        return False
+    try:
+        return "StudioMCP.exe" in _run(["tasklist", "/FI", "PID eq %d" % pid]).stdout
+    except Exception:
+        return False
+
+
+def clean_leftovers(our_child_pid=None):
+    """Returns the PIDs it closed (for --check and the log)."""
+    if os.name != "nt":
+        return []
+    killed = []
+    owner = port_owner_pid(STUDIO_MCP_PORT)
+    if owner and owner != our_child_pid and _pid_is_studio_mcp(owner):
+        try:
+            _run(["taskkill", "/F", "/PID", str(owner)])
+            killed.append(owner)
+            log("killed leftover StudioMCP.exe pid %d - it held Studio's MCP port %d, "
+                "so a fresh one could never take it" % (owner, STUDIO_MCP_PORT))
+        except Exception as exc:
+            log("could not kill StudioMCP pid %d: %r" % (owner, exc))
+    if studio_app_running() is False and _tasklist_has("StudioMCP.exe"):
+        log("no Roblox Studio is running - cleaning up leftover StudioMCP.exe processes")
+        try:
+            _run(["taskkill", "/F", "/IM", "StudioMCP.exe"])
+        except Exception as exc:
+            log("could not clean up leftover StudioMCP.exe: %r" % (exc,))
+    return killed
+
+
 # ── the host's own tools ────────────────────────────────────────────────────
 # Blender hands ORscript a PNG on disk and the extension reads it back through
 # the agent's read_file_base64 - a 1.18.1 tool. On an older exe that call does
@@ -231,6 +324,8 @@ class Studio(object):
         self.q = queue.Queue()
         self.path = None
         self.how = ""
+        self._pid = None
+        self.last_killed = []
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
@@ -244,6 +339,9 @@ class Studio(object):
                 "-> Enable Studio as MCP Server."
             )
         cmd = child_command(path)
+        # Before spawning: a stale StudioMCP.exe holding the port would make this
+        # one useless, so clear it out first.
+        self.last_killed = clean_leftovers(self._pid)
         kwargs = {}
         if os.name == "nt":
             si = subprocess.STARTUPINFO()
@@ -256,6 +354,7 @@ class Studio(object):
         )
         self.buf = self.proc.stdin
         self.path, self.how = path, how
+        self._pid = self.proc.pid
         threading.Thread(target=self._pump, args=(self.proc,), daemon=True).start()
         log("StudioMCP started (%s): %s" % (how, path))
 
@@ -565,6 +664,18 @@ def check():
     path, how = find_studio_mcp()
     say("Studio MCP host check")
     say("  python      : %s" % sys.version.split()[0])
+    app = studio_app_running()
+    say("  Studio app  : %s" % {True: "running", False: "not running",
+                               None: "unknown"}[app])
+    if os.name == "nt":
+        owner = port_owner_pid(STUDIO_MCP_PORT)
+        if owner:
+            kind = "StudioMCP.exe" if _pid_is_studio_mcp(owner) else "another program"
+            say("  port %-6d : held by pid %d (%s)" % (STUDIO_MCP_PORT, owner, kind))
+            if kind == "StudioMCP.exe":
+                say("                a leftover from an earlier session - the host closes it")
+        else:
+            say("  port %-6d : free" % STUDIO_MCP_PORT)
     if path:
         say("  StudioMCP   : %s" % path)
         say("  found by    : %s" % how)
