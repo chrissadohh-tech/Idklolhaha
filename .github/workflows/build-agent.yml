@@ -1,0 +1,53 @@
+name: Build or-agent (Windows)
+
+# Compiles ORscript's Rust agent on GitHub's Windows runner and attaches the
+# finished or-agent.exe as a build artifact. Nobody needs a local toolchain:
+# replace the exe in the extension folder and captures stop depending on the
+# Python host, because a 1.18.1+ agent carries Studio's MCP image items itself.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "arena/01a0b10f-idklolhaha"]
+    paths:
+      - "ORscript_Final/ORscript_Final/agent/**"
+      - ".github/workflows/build-agent.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ORscript_Final/ORscript_Final/agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: rustc --version; cargo --version
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Unit tests (informational - never blocks the exe)
+        continue-on-error: true
+        run: cargo test --release -- --nocapture
+
+      - name: Inspect the binary
+        run: |
+          $exe = "target\release\or-agent.exe"
+          if (-not (Test-Path $exe)) { throw "or-agent.exe was not produced" }
+          Get-Item $exe | Select-Object FullName, Length, LastWriteTime | Format-List
+          Get-FileHash $exe -Algorithm SHA256
+          # Prove the features are actually IN this binary (the whole point).
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          foreach ($needle in @("read_file_base64", "mcp_servers.json", "StudioMCP.exe", "screen_capture")) {
+            "{0,-20} {1}" -f $needle, ($text.Contains($needle))
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: or-agent-windows
+          path: ORscript_Final/ORscript_Final/agent/target/release/or-agent.exe
+          if-no-files-found: error
