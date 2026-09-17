@@ -329,9 +329,15 @@ async fn addons_merged_tools(state: &AppState, roblox_tools: &[serde_json::Value
                 // Only re-list a LIVE server. list_tools() would respawn a dead
                 // one, and a server that cannot start (no uvx, Blender closed)
                 // must not burn seconds on every list_commands - Connect Blender
-                // / add_server is what revives it.
-                Some(rt) if rt.child_alive() => (rt.list_tools().await.ok().unwrap_or_default(), true),
-                Some(_) => (Vec::new(), false),
+                // / add_server is what revives it. (child_alive/list_tools need
+                // &mut, so this is an if, not a match guard.)
+                Some(rt) => {
+                    if rt.child_alive() {
+                        (rt.list_tools().await.ok().unwrap_or_default(), true)
+                    } else {
+                        (Vec::new(), false)
+                    }
+                }
                 None => (Vec::new(), false),
             }
         };

@@ -100,7 +100,7 @@ pub struct AgentApp {
 impl AgentApp {
     fn dot(ui: &mut egui::Ui, color: egui::Color32) {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-        ui.painter().circle_stroke(rect.center(), 3.5, egui::Stroke::new(1.2, color));
+        ui.painter().circle_stroke(rect.center(), 3.5, egui::Stroke::new(1.2_f32, color));
         ui.painter().circle_filled(rect.center(), 1.6, color);
     }
 }
@@ -163,7 +163,7 @@ impl App for AgentApp {
                     ui.add_space(8.0);
                     egui::Frame::none()
                         .fill(egui::Color32::from_rgba_unmultiplied(RED.r(), RED.g(), RED.b(), 30))
-                        .stroke(egui::Stroke::new(1.0, RED))
+                        .stroke(egui::Stroke::new(1.0_f32, RED))
                         .rounding(egui::Rounding::same(8.0))
                         .inner_margin(egui::Margin::symmetric(10.0, 6.0))
                         .show(ui, |ui| {
@@ -214,14 +214,14 @@ impl App for AgentApp {
                             if ui.add(egui::Button::new(
                                 egui::RichText::new("Sandbox").size(10.5).color(if sandbox_on { FG } else { DIM }).strong()
                             ).fill(if sandbox_on { egui::Color32::from_rgb(32, 32, 32) } else { egui::Color32::TRANSPARENT })
-                             .stroke(if sandbox_on { egui::Stroke::new(1.0, LINE) } else { egui::Stroke::new(1.0, GREY) })
+                             .stroke(if sandbox_on { egui::Stroke::new(1.0_f32, LINE) } else { egui::Stroke::new(1.0_f32, GREY) })
                              .small()).clicked() {
                                 if let Ok(f) = s.full_access.read() { f.store(false, Ordering::Relaxed); }
                             }
                             if ui.add(egui::Button::new(
                                 egui::RichText::new("Full PC").size(10.5).color(if full_on { RED } else { DIM }).strong()
                             ).fill(if full_on { egui::Color32::from_rgb(40, 16, 16) } else { egui::Color32::TRANSPARENT })
-                             .stroke(if full_on { egui::Stroke::new(1.0, RED) } else { egui::Stroke::new(1.0, GREY) })
+                             .stroke(if full_on { egui::Stroke::new(1.0_f32, RED) } else { egui::Stroke::new(1.0_f32, GREY) })
                              .small()).clicked() {
                                 if let Ok(f) = s.full_access.read() { f.store(true, Ordering::Relaxed); }
                             }
@@ -250,7 +250,7 @@ impl App for AgentApp {
                                         .color(if sel { FG } else { DIM }).strong();
                                     if ui.add(egui::Button::new(label)
                                         .fill(if sel { egui::Color32::from_rgb(32, 32, 32) } else { egui::Color32::TRANSPARENT })
-                                        .stroke(if sel { egui::Stroke::new(1.0, LINE) } else { egui::Stroke::NONE })
+                                        .stroke(if sel { egui::Stroke::new(1.0_f32, LINE) } else { egui::Stroke::NONE })
                                         .small()).clicked() {
                                         self.log_filter = i;
                                     }
