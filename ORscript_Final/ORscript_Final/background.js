@@ -814,6 +814,81 @@ function absorbOrImages(r) {
   return Object.assign({}, r, { text: text, images: (r.images || []).concat(found) });
 }
 
+// ── Capture speed: send less picture ────────────────────────────────────
+// A Studio capture is a full-viewport PNG - often several MB of base64 - and the
+// wait a user actually feels is the CHAT UPLOAD, not the capture. Shrinking it
+// first cuts that (and the attach) dramatically while staying readable: only
+// oversized captures are touched, and only when the result is actually smaller.
+// 0 disables it: chrome.storage.local.set({ "rs-shot-max": 0 }).
+let shotMax = 1400;      // longest side, px
+let shotQuality = 0.9;   // JPEG quality for the re-encode
+try {
+  chrome.storage?.local.get(["rs-shot-max", "rs-shot-quality"], (o) => {
+    if (!o) return;
+    const m = Number(o["rs-shot-max"]);
+    if (Number.isFinite(m) && m >= 0) shotMax = m;
+    const q = Number(o["rs-shot-quality"]);
+    if (Number.isFinite(q) && q > 0.3 && q <= 1) shotQuality = q;
+  });
+} catch {}
+
+const SHRINK_KEEP_BYTES = 350 * 1024; // below this, the PNG is sent untouched
+
+function b64ToBytes(b64) {
+  const bin = atob(String(b64 || ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function bytesToB64(bytes) {
+  let s = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+
+async function shrinkImages(r) {
+  if (!r || !Array.isArray(r.images) || !r.images.length) return r;
+  if (!shotMax || shotMax <= 0) return r;
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") return r;
+  const out = [];
+  let shrunk = 0, before = 0, after = 0;
+  for (const img of r.images) {
+    try {
+      const bytes = b64ToBytes(img.data);
+      before += bytes.length;
+      // Small capture: keep the ORIGINAL bytes (identical quality, no decode).
+      if (bytes.length <= SHRINK_KEEP_BYTES) {
+        out.push(img); after += bytes.length; continue;
+      }
+      const bmp = await createImageBitmap(new Blob([bytes], { type: img.mimeType || "image/png" }));
+      const scale = Math.min(1, shotMax / Math.max(bmp.width, bmp.height));
+      const w = Math.max(1, Math.round(bmp.width * scale));
+      const h = Math.max(1, Math.round(bmp.height * scale));
+      const cv = new OffscreenCanvas(w, h);
+      const ctx = cv.getContext("2d");
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      const blob = await cv.convertToBlob({ type: "image/jpeg", quality: shotQuality });
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      if (buf.length >= bytes.length) { // no gain (or a palette win) - keep the PNG
+        out.push(img); after += bytes.length; continue;
+      }
+      out.push({ mimeType: "image/jpeg", data: bytesToB64(buf) });
+      after += buf.length; shrunk++;
+    } catch (e) {
+      // A speed tweak must never cost a capture.
+      out.push(img);
+    }
+  }
+  if (!shrunk) return r;
+  log(`capture resized ${Math.round(before / 1024)}KB -> ${Math.round(after / 1024)}KB (max ${shotMax}px q${shotQuality})`);
+  return Object.assign({}, r, { images: out });
+}
+
 async function sendLocalEngine(obj, timeout = 25000) {
   if (engine === "local" && connected && ws && ws.readyState === WebSocket.OPEN) {
     return send(obj, timeout);
@@ -1169,8 +1244,9 @@ async function readWorkspaceImage(filePath) {
       if (!j || !j.data) continue;
       // The PNG was only a hand-off file: drop it once its bytes are in hand so
       // the workspace doesn't accumulate screenshots (a failed read keeps it for
-      // debugging). Best-effort - the capture is already safe.
-      try { await sendLocalEngine({ type: "call_tool", name: "delete_path", arguments: { path: cand } }, 15000); } catch {}
+      // debugging). Deliberately NOT awaited - waiting for the agent to delete it
+      // added a whole round trip to every Blender capture.
+      sendLocalEngine({ type: "call_tool", name: "delete_path", arguments: { path: cand } }, 15000).catch(() => {});
       return { mimeType: j.mimeType || "image/png", data: String(j.data) };
     } catch {}
   }
@@ -1496,7 +1572,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "call_tool": {
         const timeout = (msg.timeout || 120000) + 10000;
         if (blenderAddon && isBlenderToolName(msg.name)) {
-          sendResponse(absorbOrImages(await blenderCall(msg.name, msg.arguments, timeout)));
+          sendResponse(await shrinkImages(absorbOrImages(await blenderCall(msg.name, msg.arguments, timeout))));
           break;
         }
         const r = await send(
@@ -1504,8 +1580,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           timeout
         );
         // Every Studio/Skills/AgentScript tool call returns here, so the
-        // Python host's <<OR_IMAGE>> markers become r.images once, for all.
-        sendResponse(absorbOrImages(r));
+        // Python host's <<OR_IMAGE>> markers become r.images once, for all -
+        // and oversized captures are resized before they reach the model.
+        sendResponse(await shrinkImages(absorbOrImages(r)));
         break;
       }
       case "restart_mcp": {

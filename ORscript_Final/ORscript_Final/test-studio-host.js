@@ -117,7 +117,7 @@ ok("launcher tells the user what TOOLS should read afterwards",
 // ── the extension-side decoder ──────────────────────────────────────────────
 ok("background decodes the markers once, for every tool funnel",
   bg.includes("const OR_IMAGE_RE =") && bg.includes("function absorbOrImages(r)") &&
-  bg.includes("sendResponse(absorbOrImages(r))") &&
+  bg.includes("sendResponse(await shrinkImages(absorbOrImages(r)))") &&
   bg.includes("absorbOrImages(await blenderCall("));
 ok("the capture error now points at the bat, not only at a rebuild",
   mainJS.includes("Start OR Agent.bat") && mainJS.includes("studio_mcp_host.py") &&
@@ -142,8 +142,12 @@ const sliceObj = (src, sig) => {
 const code =
   sliceObj(bg, "const OR_IMAGE_RE =").split("\nconst OR_IMAGE_MIME_RE")[0] + "\n" +
   "const OR_IMAGE_MIME_RE = " + sliceObj(bg, "const OR_IMAGE_MIME_RE =").replace("const OR_IMAGE_MIME_RE = ", "") + "\n" +
-  sliceObj(bg, "function absorbOrImages(r)") + "\nexports = { absorbOrImages };";
-const ctx = { exports: {} };
+  sliceObj(bg, "function absorbOrImages(r)") + "\n" +
+  sliceObj(bg, "function b64ToBytes(b64)") + "\n" +
+  sliceObj(bg, "function bytesToB64(bytes)") + "\n" +
+  "exports = { absorbOrImages, b64ToBytes, bytesToB64 };";
+// atob/btoa are browser globals; the vm context needs them passed in.
+const ctx = { exports: {}, atob: globalThis.atob, btoa: globalThis.btoa };
 try {
   vm.runInNewContext(code, ctx);
 } catch (e) {
@@ -186,6 +190,47 @@ if (ctx.exports && ctx.exports.absorbOrImages) {
   ok("plain text results pass through untouched", absorb(plain) === plain);
   ok("a malformed marker is ignored, never half-attached",
     absorb({ ok: true, text: "<<OR_IMAGE mimeType=\"image/png\">>\nshort\n<<OR_END>>" }).images === undefined);
+}
+
+// ── speed: the capture payload is what costs the wait ───────────────────────
+ok("oversized captures are resized before upload (the upload is the wait)",
+  bg.includes("async function shrinkImages(r)") &&
+  bg.includes("new OffscreenCanvas(w, h)") &&
+  bg.includes("convertToBlob({ type: \"image/jpeg\", quality: shotQuality })") &&
+  bg.includes("const scale = Math.min(1, shotMax / Math.max(bmp.width, bmp.height))"));
+ok("it is applied on BOTH capture routes, in the one funnel",
+  bg.includes("await shrinkImages(absorbOrImages(await blenderCall(") &&
+  bg.includes("sendResponse(await shrinkImages(absorbOrImages(r)))"));
+ok("small captures keep their exact original bytes",
+  bg.includes("const SHRINK_KEEP_BYTES = 350 * 1024") &&
+  bg.includes("if (bytes.length <= SHRINK_KEEP_BYTES)"));
+ok("a resize that would not help is discarded (PNG kept)",
+  bg.includes("if (buf.length >= bytes.length)") && bg.includes("keep the PNG"));
+ok("a resize failure can never lose a capture",
+  bg.includes("A speed tweak must never cost a capture") &&
+  bg.includes("if (typeof createImageBitmap !== \"function\""));
+ok("it can be tuned or switched off from storage",
+  bg.includes('["rs-shot-max", "rs-shot-quality"]') && bg.includes("let shotMax = 1400") &&
+  bg.includes("shotMax = m") && bg.includes("!shotMax || shotMax <= 0"));
+ok("the resize is logged with before/after KB",
+  bg.includes("capture resized ${Math.round(before / 1024)}KB -> ${Math.round(after / 1024)}KB"));
+ok("Blender no longer waits for the hand-off PNG to be deleted",
+  bg.includes("Deliberately NOT awaited") &&
+  bg.includes('name: "delete_path", arguments: { path: cand } }, 15000).catch(() => {})'));
+
+if (ctx.exports && ctx.exports.bytesToB64 && ctx.exports.b64ToBytes) {
+  const { bytesToB64, b64ToBytes } = ctx.exports;
+  const pattern = new Uint8Array(70000);           // crosses the 0x8000 chunking
+  for (let i = 0; i < pattern.length; i++) pattern[i] = (i * 7 + 13) & 0xff;
+  const b64 = bytesToB64(pattern);
+  const back = b64ToBytes(b64);
+  const hex = Buffer.from(pattern).toString("base64");
+  ok("base64 helpers match Node's encoder exactly (70KB, chunked)",
+    b64 === hex && back.length === pattern.length &&
+    back[0] === pattern[0] && back[69999] === pattern[69999] && back[32768] === pattern[32768]);
+  ok("base64 helpers handle the empty and short cases",
+    bytesToB64(new Uint8Array(0)) === "" &&
+    bytesToB64(new Uint8Array([104, 105])) === Buffer.from("hi").toString("base64"));
 }
 
 // ── behaviour: a real round-trip through the host (fake Studio) ─────────────
