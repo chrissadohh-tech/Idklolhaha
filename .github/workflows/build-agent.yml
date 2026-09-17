@@ -41,7 +41,7 @@ jobs:
         continue-on-error: true
         run: cargo test --release 2>&1 | Tee-Object -FilePath test.log
 
-      - name: Publish cargo output to the ci-logs branch
+      - name: Publish cargo output (and the exe, when built) to ci-logs
         if: always()
         working-directory: ${{ github.workspace }}
         shell: bash
@@ -51,6 +51,11 @@ jobs:
           for f in build.log test.log; do
             [ -f "ORscript_Final/ORscript_Final/agent/$f" ] && cp "ORscript_Final/ORscript_Final/agent/$f" /tmp/out/ || true
           done
+          # The exe too: Actions artifact storage is not reachable everywhere,
+          # but a git branch is. This is what gets copied over the old binary.
+          EXE="ORscript_Final/ORscript_Final/agent/target/release/or-agent.exe"
+          if [ -f "$EXE" ]; then cp "$EXE" /tmp/out/or-agent.exe; fi
+          ls -l /tmp/out
           ls -la /tmp/out || true
           cd /tmp
           rm -rf logs && mkdir logs && cd logs

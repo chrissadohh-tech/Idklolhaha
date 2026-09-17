@@ -2,33 +2,39 @@
 rem ============================================================================
 rem  ORscript - start the agent with the Python Studio MCP host.
 rem
-rem  ZeroScript's method, kept exactly: their Studio layer is Python, so nothing
-rem  ever has to be compiled. This file finds Python the same way their start.bat
-rem  does, points or-agent.exe at studio_mcp_host.py via OR_MCP_COMMAND, checks
-rem  the host can see Studio, then starts the agent as usual.
+rem  Only needed while or-agent.exe is older than 1.18.1 (the rebuilt agent
+rem  carries Studio's MCP image item itself). ZeroScript's method, kept exactly:
+rem  their Studio layer is Python, so nothing has to be compiled.
+rem
+rem  This window NEVER closes by itself - every step it prints stays on screen,
+rem  and the same lines are appended to or_agent_start.log next to this file.
 rem
 rem  Double-click THIS file instead of or-agent.exe.
 rem ============================================================================
 setlocal
 cd /d "%~dp0"
+title ORscript agent launcher
 set "HOST=studio_mcp_host.py"
-set "WRAP=%CD%\or_mcp_host.bat"
+set "HL="%CD%\studio_mcp_host.log""
+set "LOG="%CD%\or_agent_start.log""
+set "CHK="%TEMP%\or_host_check.txt""
+set "WRAP="%CD%\or_mcp_host.bat""
+set "STAMP=%DATE% %TIME%"
+call :say ""
+call :say "=== ORscript agent launcher - %STAMP% ==="
 
-rem ── 0. Only one agent may hold the bridge port. A still-running agent would
-rem      keep port 3000, so the new one would be ignored AND OR_MCP_COMMAND
-rem      (read when the agent starts) would never apply. ZeroScript kills its
-rem      old bridge for the same reason.
+rem ── 0. One agent only: an old process keeps port 3000 AND would still be the
+rem      one without the host, and OR_MCP_COMMAND is read when a process starts.
 tasklist /FI "IMAGENAME eq or-agent.exe" 2>nul | find /i "or-agent.exe" >nul
 if not errorlevel 1 (
-  echo [OR] An or-agent.exe is already running - closing it first.
+  call :say "Closing the running or-agent.exe (it owns port 3000)..."
   taskkill /F /IM or-agent.exe >nul 2>nul
   timeout /t 2 /nobreak >nul
 )
 
-rem ── 1. Find Python. py first (never the Microsoft Store stub), then python,
-rem      then the standard install folders - a winget/installer run without
-rem      "Add to PATH" leaves neither on PATH.
-echo [OR] Looking for Python...
+rem ── 1. Find Python: py -3 (never the Microsoft Store stub), then python, then
+rem      the standard install folders - an install without "Add to PATH" works.
+call :say "Looking for Python..."
 set "PY="
 for %%C in ("py -3" "python") do (
   if not defined PY call :validate_py %%~C && set "PY=%%~C"
@@ -45,31 +51,39 @@ if not defined PY (
   )
 )
 if not defined PY goto :no_python
-for /f "tokens=*" %%v in ('call %PY% --version 2^>^&1') do echo [OR] Python: %PY% %%v
+for /f "tokens=*" %%v in ('call %PY% --version 2^>^&1') do call :say "Python: %PY%  (%%v)"
 
-rem ── 2. Point the agent at the host. OR_MCP_COMMAND is split on spaces by the
-rem      agent, so an interpreter path containing spaces goes through a tiny
-rem      wrapper .bat, run with cmd /C - the same way the agent runs Roblox's
-rem      own mcp.bat.
-echo %PY% | find " " >nul
+rem ── 2. Build the command the agent runs. It splits OR_MCP_COMMAND on spaces, so
+rem      an interpreter path with spaces (or the py launcher's own "-3") goes
+rem      through a generated one-line wrapper, which the agent runs via cmd /C.
+>"%WRAP%" echo @echo off
+>>"%WRAP%" echo %PY% "%%~dp0%HOST%" %%*
+set "OR_MCP_COMMAND=cmd /C or_mcp_host.bat"
+call :say "Wrapper: %WRAP%"
+call :say "OR_MCP_COMMAND=%OR_MCP_COMMAND%"
+
+rem Make it stick for every future start (short 8.3 path = no spaces to split on).
+for %%I in (%WRAP%) do set "WRAP8=%%~sI"
+echo %WRAP8% | find " " >nul
 if errorlevel 1 (
-  set "OR_MCP_COMMAND=%PY% %HOST%"
-  if exist "%WRAP%" del "%WRAP%" >nul 2>nul
+  setx OR_MCP_COMMAND "cmd /C %WRAP8%" >nul 2>nul
+  if errorlevel 1 (call :say "Note: could not store the setting for future starts.") else (call :say "Stored permanently: every future or-agent.exe start uses the host.")
 ) else (
-  >"%WRAP%" echo @echo off
-  >>"%WRAP%" echo %PY% "%%~dp0%HOST%" %%*
-  set "OR_MCP_COMMAND=cmd /C or_mcp_host.bat"
-  echo [OR] Interpreter path has spaces - using or_mcp_host.bat as the command.
+  call :say "Note: this folder has spaces and 8.3 names are off - double-click this file each time."
 )
-echo [OR] OR_MCP_COMMAND = %OR_MCP_COMMAND%
 
-rem ── 3. Prove the host finds Studio BEFORE the agent depends on it.
-echo.
-call %PY% %HOST% --check
-echo.
+rem ── 3. Prove the host can see Studio BEFORE the agent depends on it.
+call :say ""
+call %PY% %HOST% --check >"%CHK%" 2>&1
+type "%CHK%" >>"%LOG%"
+type "%CHK%"
+del "%CHK%" >nul 2>nul
+echo. >>"%LOG%"
 
-rem ── 4. Start the agent and wait for its bridge port.
-echo [OR] Starting or-agent.exe...
+rem ── 4. Start the agent, then check that the host was actually spawned.
+for %%F in (%HL%) do set "LOGSIZE=%%~zF"
+call :say ""
+call :say "Starting or-agent.exe..."
 start "" "%CD%\or-agent.exe"
 set "TRIES=0"
 :wait
@@ -77,35 +91,61 @@ netstat -ano -p TCP | find ":3000" | find "LISTENING" >nul
 if not errorlevel 1 goto :up
 timeout /t 1 /nobreak >nul
 set /a TRIES+=1
-if %TRIES% lss 10 goto :wait
-echo [OR] WARNING: nothing is listening on port 3000 yet - check the OR window.
-goto :done
+if %TRIES% lss 15 goto :wait
+call :say "WARNING: nothing is listening on port 3000 after 15s - check the OR window."
+goto :hostcheck
 :up
-echo [OR] Bridge is listening on port 3000.
-:done
+call :say "Bridge is listening on port 3000."
+set "TRIES=0"
+:hostcheck
+for %%F in (%HL%) do set "NOW=%%~zF"
+if "%NOW%"=="%LOGSIZE%" (
+  if %TRIES% lss 12 (
+    timeout /t 1 /nobreak >nul
+    set /a TRIES+=1
+    goto :hostcheck
+  )
+)
+for %%F in (%HL%) do set "NOW=%%~zF"
 echo.
-echo [OR] TOOLS should now read 28 (Studio's 27 plus or_host_read_image).
-echo [OR] If it still reads 27, the agent did not get OR_MCP_COMMAND.
-echo [OR] Host log: studio_mcp_host.log
-timeout /t 8 /nobreak >nul
+if "%NOW%"=="%LOGSIZE%" goto :host_missing
+call :say "OK: the Python host is running (studio_mcp_host.log grew)."
+call :say "In OR, TOOLS must read 28. If it still says 27, close the OR window"
+call :say "completely and start it again from this file."
+goto :end
+
+:host_missing
+call :say "PROBLEM: the host did NOT start, so the agent is running WITHOUT it."
+call :say "That is why captures stay empty (TOOLS 27)."
+call :say "Check the output above: Python missing, or the check reported no StudioMCP."
+call :say "Log: %LOG%"
+goto :end
+
+:end
+echo.
+echo Press any key to close this window.
+pause >nul
 exit /b 0
 
 :no_python
+call :say ""
+call :say "ERROR: Python 3 was not found on PATH or in the usual install folders."
+call :say "The capture fix needs it - ZeroScript needs it too. Studio's picture is"
+call :say "an MCP image item, and only this host can carry it past the old binary."
+call :say ""
+call :say "Install Python 3 from python.org, tick \"Add python.exe to PATH\", then"
+call :say "run this file again. Everything else already works without it."
 echo.
-echo [OR] ERROR: Python 3 was not found on PATH or in the usual install folders.
-echo [OR] The capture fix needs it (ZeroScript needs it too): Studio sends the
-echo [OR] picture as an MCP image item, and only this host can carry it past the
-echo [OR] old or-agent.exe binary.
-echo.
-echo [OR] Install Python 3 from python.org and tick "Add python.exe to PATH",
-echo [OR] then run this file again. Studio and Blender tools work either way.
-echo.
-pause
+echo Press any key to close this window.
+pause >nul
 exit /b 1
 
 :validate_py
-rem A Microsoft Store "python" is a stub that fails silently, so run it for real.
-rem %1 keeps its quotes here on purpose (paths with spaces), and call re-parses
-rem the line so a quoted path is not mangled.
+rem A Microsoft Store "python" is a stub that silently fails, so run it for real.
 call %1 -c "import sys" >nul 2>nul
 exit /b %errorlevel%
+
+:say
+echo %~1
+echo %~1 >>"%LOG%"
+exit /b 0
