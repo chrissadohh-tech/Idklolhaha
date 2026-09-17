@@ -1274,6 +1274,29 @@
   // error on non-vision providers, so nothing needs to be predicted here.
   const ALWAYS_BLOCKED_TOOLS = new Set(["subagent"]);
   const VISION_TOOLS = new Set(["screen_capture"]);
+  // Captures need an or-agent that carries MCP image content items through the
+  // bridge (and, for Blender, the binary read-back). An older or-agent.exe
+  // fails these SILENTLY - Studio answers a capture with an image item only, so
+  // the old bridge forwards ok + empty text. Every capture failure therefore
+  // names the build, so a stale binary is never mistaken for a broken Studio.
+  const AGENT_CAPTURE_MIN = "1.18.1";
+  function agentVersionBelow(version, min) {
+    const m = String(version || "").match(/^(\d+)\.(\d+)\.(\d+)/);
+    if (!m) return true;                         // unknown ⇒ assume old
+    const cur = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const tgt = min.split(".").map(Number);
+    for (let i = 0; i < 3; i++) if (cur[i] !== tgt[i]) return cur[i] < tgt[i];
+    return false;
+  }
+  function agentBuildNote() {
+    const v = String((A.bridge && A.bridge.agent_version) || "");
+    const label = v ? `agent v${v}` : "agent version unknown (an older build)";
+    if (!agentVersionBelow(v, AGENT_CAPTURE_MIN)) {
+      return ` (${label} - which is current, so the bridge is not the problem: check the MCP link inside Studio itself).`;
+    }
+    return ` (${label}). Captures need or-agent ${AGENT_CAPTURE_MIN}+: rebuild with "cd agent && cargo build --release", ` +
+      `copy agent/target/release/or-agent.exe over the old one and restart it.`;
+  }
   const bareToolName = (name) => (name && name.includes("/") ? name.split("/").pop() : name) || "";
   // The ONLY sanctioned way to read the active engine outside build()'s closure.
   // Returns exactly "roblox" | "local". Legacy "anim" storage maps onto Roblox
@@ -2004,6 +2027,7 @@
         permissions: perm,
         bridge_connected: bridge.connected === true,
         blender: !!bridge.blender,
+        agent_version: bridge.agent_version || "(unknown - rebuild the agent if captures fail)",
         tools: A.toolList.length || 0,
         agent_started: !!A.started,
         agent_running: !!A.running,
@@ -2181,6 +2205,14 @@
           const caption = r.text && r.text.trim() ? r.text.trim() : `${r.images.length} image(s) captured.`;
           return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
         }
+        // A capture that answers "ok" with NO text and NO image is what an old
+        // bridge returns: Studio's screen_capture sends the picture as an MCP
+        // image content item only, so a binary without image passthrough hands
+        // back an empty string. Explain it instead of a bare "(empty result)".
+        if (VISION_TOOLS.has(bareName) && !String(r.text || "").trim()) {
+          return `ERROR calling '${name}': the capture came back with no text and no image.` +
+            agentBuildNote() + ` Then call ${name} again.`;
+        }
         const textOut = r.text && r.text.length ? r.text : "(tool returned an empty result)";
         const autoStudio = bareName === "blender_export_fbx" || bareName === "export_blender_fbx";
         if (autoStudio) {
@@ -2291,6 +2323,14 @@
         return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
       }
       const text = r.text && r.text.length ?  r.text : "(tool returned an empty result)";
+      // get_viewport_screenshot writes a PNG and reports its path; the extension
+      // reads those bytes back (read_file_base64) and attaches them. If nothing
+      // was attached, say why - the file IS on disk, so silence would look like
+      // "Blender took a screenshot but the model can't see it".
+      if (bareName === "get_viewport_screenshot") {
+        return `Output of '${name}':\n${text}\n\nNOTE: Blender saved the capture but nothing could be read back as an image.` +
+          agentBuildNote() + ` Then call ${name} again.`;
+      }
       return `Output of '${name}':\n${text}`;
     }
     // Orphaned content script - a page reload is the only cure, so say exactly
@@ -7405,7 +7445,7 @@ rsInterval(() => {
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type === "rs-status") {
-      ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, studioProc: msg.studioProc, robloxProc: msg.robloxProc, roblox_connected: msg.roblox_connected, engine: msg.engine, tools: msg.tools, servers: msg.servers, local_connected: msg.local_connected, local_full: msg.local_full, local_root: msg.local_root, blender: msg.blender, blender_shim: msg.blender_shim, blender_error: msg.blender_error });
+      ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, studioProc: msg.studioProc, robloxProc: msg.robloxProc, roblox_connected: msg.roblox_connected, engine: msg.engine, tools: msg.tools, servers: msg.servers, local_connected: msg.local_connected, local_full: msg.local_full, local_root: msg.local_root, blender: msg.blender, blender_shim: msg.blender_shim, blender_error: msg.blender_error, agent_version: msg.agent_version });
     }
     if (msg && msg.type === "rs-open-menu") {
       ui.openMenu(false); // from the popup's Settings button — opens at the top (Switch AI / custom prompt)

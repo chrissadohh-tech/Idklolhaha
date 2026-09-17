@@ -19,6 +19,10 @@ const ENGINES = ["roblox", "local"];
 function normalizeEngine(v) { return v === "local" ? "local" : "roblox"; }
 let engine = "roblox"; // "roblox" | "local"
 let rustMode = false; // true if Rust agent on 3000 is reachable (preferred)
+// Version the running or-agent reports on /api/status. "" = a build from before
+// the field existed, i.e. older than 1.18.1 - the UI says so instead of leaving
+// a stale binary invisible from the chat.
+let agentVersion = "";
 chrome.storage?.local.get(ENGINE_KEY, (o) => {
   const want = normalizeEngine(o && o[ENGINE_KEY]);
   if (want !== engine) {
@@ -540,6 +544,8 @@ function statusObj() {
     tools: mergeBlenderTools(toolsCache).length,
     servers: blenderServers(serversCache), engine,
     blender: blenderAddon, blender_error: blenderError || undefined,
+    // Absent on agents older than 1.18.1 - the UI reads "" as "old build".
+    agent_version: agentVersion || undefined,
   };
 }
 
@@ -551,11 +557,13 @@ async function refreshProcStatus() {
     const nr = !!j.roblox_proc;
     const nl = j.local_ready === true;
     const nf = j.local_full === true;
+    const nv = typeof j.version === "string" ? j.version : "";
     const nrRoot = typeof j.local_root === "string" ? j.local_root : localRoot;
-    const changed = nr !== robloxProc || nl !== localReady || nf !== localFull || nrRoot !== localRoot;
+    const changed = nr !== robloxProc || nl !== localReady || nf !== localFull || nrRoot !== localRoot || nv !== agentVersion;
     robloxProc = nr;
     localReady = nl;
     localFull = nf;
+    agentVersion = nv;
     localRoot = nrRoot;
     // One-shot re-sync: if the agent restarted with FULL off but the user's
     // persisted toggle says ON, re-apply their choice once.

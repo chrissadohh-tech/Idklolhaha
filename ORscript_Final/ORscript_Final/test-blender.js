@@ -34,6 +34,8 @@ ok("blenderCall returns the image instead of hardcoded []", bg.includes("images.
 ok("agent read_file_base64 is binary-safe + sandboxed", ws.includes("pub async fn tool_read_file_base64") &&
   ws.includes("fn base64(bytes: &[u8]) -> String") && ws.includes("MAX_IMAGE_BYTES") &&
   ws.includes('"read_file_base64" => tool_read_file_base64') && !ws.includes('{"name": "read_file_base64"'));
+ok("agent reports its version (a stale exe is otherwise invisible)", rs.includes('"version": env!("CARGO_PKG_VERSION")') &&
+  fs.readFileSync(path.join(root, "agent/Cargo.toml"), "utf8").includes('version = "1.18.1"'));
 ok("agent keeps MCP image content items", rs.includes("struct McpCall") &&
   rs.includes('!= Some("image")') && rs.includes('"images":images'));
 ok("main connect uses blender_connect", main.includes('type: "blender_connect"') && !main.includes("uvx blender-mcp"));

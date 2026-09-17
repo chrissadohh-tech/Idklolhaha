@@ -563,6 +563,10 @@ async fn local_full_handler(State(state): State<AppState>, Json(req): Json<Local
 }
 
 async fn status_handler(State(state): State<AppState>) -> impl IntoResponse {    Json(serde_json::json!({
+        // Reported so the extension can tell an old binary from a new one: the
+        // capture path needs 1.18.1+ (MCP image content items survive the hop),
+        // and a stale or-agent.exe is otherwise invisible from the chat.
+        "version": env!("CARGO_PKG_VERSION"),
         "roblox_connected": state.roblox_editor_connected.load(Ordering::Relaxed),
         "roblox_bridge_connected": state.roblox_clients.read().await.len() > 0,
         "local_bridge_connected": state.local_clients.read().await.len() > 0,

@@ -104,6 +104,12 @@ ok("new studio daily commands", dailySrc.includes("script_set_source") && dailyS
 ok("new blender commands", opsPy.includes("def cmd_scale") && opsPy.includes("def cmd_bevel") && opsPy.includes("def cmd_keyframe_insert") && opsPy.includes("def cmd_track_to") && bg.includes("blender_subdivision") && bg.includes("blender_add_armature"));
 const fbSrc = fs.readFileSync(path.join(root, "providers/freebuff.js"), "utf8");
 ok("freebuff slow-chat not treated as hung", fbSrc.includes("PRESTART_MS: 180000") && fbSrc.includes("GEN_IDLE_MS: 14000") && fbSrc.includes("GEN_STOP_GRACE_MS: 12000") && fbSrc.includes("function busyChrome") && fbSrc.includes("return true;") && mainSrc.includes("T.PRESTART_MS") && mainSrc.includes("T.GEN_STOP_GRACE_MS") && !fbSrc.includes("unstableWarning"));
+ok("capture failures name the agent build (no silent empty result)",
+  mainSrc.includes("function agentBuildNote") && mainSrc.includes('AGENT_CAPTURE_MIN = "1.18.1"') &&
+  mainSrc.includes("agentVersionBelow") && mainSrc.includes("the capture came back with no text and no image") &&
+  mainSrc.includes("Blender saved the capture but nothing could be read back") &&
+  bg.includes("agent_version: agentVersion || undefined") && bg.includes("let agentVersion = \"\"") &&
+  bg.includes("typeof j.version === \"string\"") && mainSrc.includes("agent_version: bridge.agent_version"));
 ok("capture = the two native tools, no OR wrapper/aliases",
   !mainSrc.includes("or_screenshot") && !bg.includes("or_screenshot") && !cfgSrc.includes("or_screenshot") &&
   !bg.includes("capture_tab") && !bg.includes("blender_screenshot") &&

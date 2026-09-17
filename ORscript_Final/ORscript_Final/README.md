@@ -47,7 +47,10 @@ Large `execute_luau` scripts are auto-chunked around 24 KB so Studio's parser ne
   then copy `agent/target/release/or-agent.exe` over the one in this folder, or run it from there.
 - Service worker skips stale-socket reconnect and MCP heal while a `call_tool` is in flight (the 25 s stale window used to kill long tools).
 - 30 Studio skills, a 24-command animation suite, AgentScript file/terminal tools.
-- **Captures** are the providers' own: `screen_capture` (Roblox Studio viewport) and `get_viewport_screenshot` (Blender viewport). The image is attached to the model's next message; Blender's is written to `or_blender_shot.png` and read back as base64 by the agent.
+- **Captures** are the providers' own: `screen_capture` (Roblox Studio viewport) and `get_viewport_screenshot` (Blender viewport), both attached to the model's next message.
+  - Studio: the picture comes back as an MCP **image content item** and is forwarded as base64 (needs `or-agent` 1.18.1+ to survive the bridge).
+  - Blender: the addon writes the PNG, and the agent reads those bytes back (`read_file_base64`) and deletes the hand-off file.
+  - Check which agent is actually running: open <http://127.0.0.1:3000/> — it returns `{"service":"or-agent","version":"…"}`. `or_status {}` reports it too.
 - Personas (Builder / Scripter / Animator / Fixer), Extra Thinking, Forge GUI, Image → Model, auto-fix playtest errors.
 
 ---
