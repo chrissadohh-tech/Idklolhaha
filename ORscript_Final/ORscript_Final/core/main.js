@@ -1294,8 +1294,10 @@
     if (!agentVersionBelow(v, AGENT_CAPTURE_MIN)) {
       return ` (${label} - which is current, so the bridge is not the problem: check the MCP link inside Studio itself).`;
     }
-    return ` (${label}). Captures need or-agent ${AGENT_CAPTURE_MIN}+: rebuild with "cd agent && cargo build --release", ` +
-      `copy agent/target/release/or-agent.exe over the old one and restart it. ` +
+    return ` (${label}). No install needed: start the agent with "Start OR Agent.bat" instead of or-agent.exe - ` +
+      `it runs Studio's MCP through studio_mcp_host.py (the Python host that ships with ORscript, the same trick ` +
+      `ZeroScript uses), which hands captures back as images on the exe you already have. Or rebuild: ` +
+      `"cd agent && cargo build --release", copy agent/target/release/or-agent.exe over the old one, restart it. ` +
       `Open http://127.0.0.1:3000/ to see which build is actually running - 1.18.0 = the old committed exe, 1.18.1 = the fixed one.`;
   }
   const bareToolName = (name) => (name && name.includes("/") ? name.split("/").pop() : name) || "";

@@ -782,6 +782,38 @@ function setBlender(on, err) {
   if (was !== blenderAddon) broadcastStatus();
 }
 
+// ── Studio images without a Rust rebuild ────────────────────────────────
+// Studio's screen_capture answers with an MCP *image* content item and next to
+// no text. or-agent 1.18.0 forwards text items only, so the picture was dropped
+// inside the binary and the tool read as "(tool returned an empty result)".
+// studio_mcp_host.py (started by "Start OR Agent.bat") hands those bytes back
+// INSIDE the text instead, wrapped in
+//     <<OR_IMAGE mimeType="image/png" bytes=12345>>
+//     <base64>
+//     <<OR_END>>
+// Decode them here so the provider attaches a real image to the next message -
+// the exact result a rebuilt agent produces natively. Idempotent: a result
+// without markers is returned untouched, so the two routes can coexist.
+const OR_IMAGE_RE = /<<OR_IMAGE\b([^>]*)>>\s*([A-Za-z0-9+/=]+)\s*<<OR_END>>/g;
+const OR_IMAGE_MIME_RE = /mimeType\s*=\s*"?([\w.+-]+\/[\w.+-]+)"?/i;
+function absorbOrImages(r) {
+  if (!r || typeof r.text !== "string" || r.text.indexOf("<<OR_IMAGE") === -1) return r;
+  const found = [];
+  const text = r.text
+    .replace(OR_IMAGE_RE, (_m, attrs, data) => {
+      if (data && data.length >= 64) {
+        const m = OR_IMAGE_MIME_RE.exec(attrs || "");
+        found.push({ mimeType: (m && m[1]) || "image/png", data: data });
+      }
+      return "";
+    })
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!found.length) return r;
+  return Object.assign({}, r, { text: text, images: (r.images || []).concat(found) });
+}
+
 async function sendLocalEngine(obj, timeout = 25000) {
   if (engine === "local" && connected && ws && ws.readyState === WebSocket.OPEN) {
     return send(obj, timeout);
@@ -1092,6 +1124,25 @@ async function ensureBlenderScripts() {
   blenderScriptsReady = true;
 }
 
+// Older or-agent (before 1.18.1) has no read_file_base64. When "Start OR
+// Agent.bat" put studio_mcp_host.py in front of Studio, THAT process can read
+// the file for us: its or_host_read_image tool answers with a real image item,
+// which arrives as an <<OR_IMAGE>> marker and decodes like any other capture. So
+// a Blender shot still reaches the chat without a compiler.
+async function readHostImage(absPath) {
+  const p = String(absPath || "").trim();
+  if (!p) return null;
+  const listed = Array.isArray(toolsCache) &&
+    toolsCache.some((t) => t && t.name === "or_host_read_image");
+  if (!listed) return null;
+  try {
+    const r = absorbOrImages(await send(
+      { type: "call_tool", name: "or_host_read_image", arguments: { path: p } }, 30000));
+    if (r && r.ok && r.images && r.images.length) return r.images[0];
+  } catch {}
+  return null;
+}
+
 // Blender viewport captures arrive as a FILE, so read it back through the
 // agent's read_file_base64 (read_file is line-numbered text and would mangle
 // binary). Paths must be workspace-relative: accept either the absolute path we
@@ -1100,8 +1151,9 @@ async function ensureBlenderScripts() {
 async function readWorkspaceImage(filePath) {
   let rel = String(filePath || "").trim();
   if (!rel) return null;
+  let root = "";
   try {
-    const root = (await agentWorkspaceRoot() || "").replace(/[\\/]+$/, "");
+    root = (await agentWorkspaceRoot() || "").replace(/[\\/]+$/, "");
     if (root && rel.toLowerCase().startsWith(root.toLowerCase())) {
       rel = rel.slice(root.length).replace(/^[\\/]+/, "");
     }
@@ -1121,6 +1173,15 @@ async function readWorkspaceImage(filePath) {
       try { await sendLocalEngine({ type: "call_tool", name: "delete_path", arguments: { path: cand } }, 15000); } catch {}
       return { mimeType: j.mimeType || "image/png", data: String(j.data) };
     } catch {}
+  }
+  // read_file_base64 is a 1.18.1 tool: on an older exe every attempt above came
+  // back "unknown tool". Ask the Python host instead - it runs on the same PC
+  // and hands the bytes back as an image.
+  const hostTries = [...new Set([String(filePath || "").trim(), rel,
+    ...cands.map((c) => (root ? root + "\\" + c : c))])].filter(Boolean);
+  for (const t of hostTries) {
+    const img = await readHostImage(t);
+    if (img) return img;
   }
   return null;
 }
@@ -1435,14 +1496,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "call_tool": {
         const timeout = (msg.timeout || 120000) + 10000;
         if (blenderAddon && isBlenderToolName(msg.name)) {
-          sendResponse(await blenderCall(msg.name, msg.arguments, timeout));
+          sendResponse(absorbOrImages(await blenderCall(msg.name, msg.arguments, timeout)));
           break;
         }
         const r = await send(
           { type: "call_tool", name: msg.name, arguments: msg.arguments, timeout: msg.timeout },
           timeout
         );
-        sendResponse(r);
+        // Every Studio/Skills/AgentScript tool call returns here, so the
+        // Python host's <<OR_IMAGE>> markers become r.images once, for all.
+        sendResponse(absorbOrImages(r));
         break;
       }
       case "restart_mcp": {
