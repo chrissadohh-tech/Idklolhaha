@@ -2205,19 +2205,19 @@
           const caption = r.text && r.text.trim() ? r.text.trim() : `${r.images.length} image(s) captured.`;
           return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
         }
-        // A capture that answers "ok" with NO text and NO image is what an old
-        // bridge returns: Studio's screen_capture sends the picture as an MCP
-        // image content item only, so a binary without image passthrough hands
-        // back an empty string. Explain it instead of a bare "(empty result)".
-        if (VISION_TOOLS.has(bareName) && !String(r.text || "").trim()) {
-          return `ERROR calling '${name}': the capture came back with no text and no image.` +
-            agentBuildNote() + ` Then call ${name} again.`;
-        }
         const textOut = r.text && r.text.length ? r.text : "(tool returned an empty result)";
         const autoStudio = bareName === "blender_export_fbx" || bareName === "export_blender_fbx";
         if (autoStudio) {
           const imported = await runAssetBridgeImport({ source: "blender", asset: r.filepath || args.filepath || args.path || "scene", objects: args.objects, dest: args.dest, scale: args.scale });
           return `Output of '${name}':\n${textOut}\n\nStudio:\n${imported}`;
+        }
+        // get_viewport_screenshot writes a PNG and reports its path; the
+        // extension reads those bytes back (read_file_base64) and attaches them.
+        // If nothing was attached, say why - the file IS on disk, so silence
+        // would look like "Blender took a screenshot but the model can't see it".
+        if (bareName === "get_viewport_screenshot") {
+          return `Output of '${name}':\n${textOut}\n\nNOTE: Blender saved the capture but nothing could be read back as an image.` +
+            agentBuildNote() + ` Then call ${name} again.`;
         }
         return `Output of '${name}':\n${textOut}`;
       }
@@ -2322,15 +2322,16 @@
           : `${r.images.length} image(s) captured.`;
         return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
       }
-      const text = r.text && r.text.length ?  r.text : "(tool returned an empty result)";
-      // get_viewport_screenshot writes a PNG and reports its path; the extension
-      // reads those bytes back (read_file_base64) and attaches them. If nothing
-      // was attached, say why - the file IS on disk, so silence would look like
-      // "Blender took a screenshot but the model can't see it".
-      if (bareName === "get_viewport_screenshot") {
-        return `Output of '${name}':\n${text}\n\nNOTE: Blender saved the capture but nothing could be read back as an image.` +
+      // A capture answering "ok" with NO text and NO image is what an OLD
+      // or-agent returns: Studio's screen_capture delivers the picture as an MCP
+      // image content item ONLY, so a bridge without image passthrough hands
+      // back an empty string. Name the running build instead of printing a bare
+      // "(tool returned an empty result)" - that message sent us hunting twice.
+      if (VISION_TOOLS.has(bareName) && !String(r.text || "").trim()) {
+        return `ERROR calling '${name}': the capture came back with no text and no image.` +
           agentBuildNote() + ` Then call ${name} again.`;
       }
+      const text = r.text && r.text.length ?  r.text : "(tool returned an empty result)";
       return `Output of '${name}':\n${text}`;
     }
     // Orphaned content script - a page reload is the only cure, so say exactly
