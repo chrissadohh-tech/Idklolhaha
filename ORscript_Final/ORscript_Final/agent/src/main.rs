@@ -103,6 +103,304 @@ struct Args {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Payload { id: String, target: String, code: String, language: String, #[serde(default)] meta: serde_json::Value, }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  mcp_servers.json — every MCP server the agent hosts, Roblox + addons
+// ══════════════════════════════════════════════════════════════════════════
+const PRIMARY_SERVER_ID: &str = "roblox";
+const MCP_CONFIG_FILE: &str = "mcp_servers.json";
+
+/// Same shape ZeroScript's config.json uses ({"mcpServers": {id: {command…}}}),
+/// so the two extensions are configured identically.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct McpConfig {
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: std::collections::BTreeMap<String, ServerSpec>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ServerSpec {
+    command: String,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    env: std::collections::BTreeMap<String, String>,
+}
+
+/// Next to or-agent.exe (OR_MCP_CONFIG overrides). ZeroScript keeps its
+/// config.json beside the bridge for the same reason: it is the user's file.
+fn mcp_config_path() -> PathBuf {
+    if let Some(p) = env_first(&["OR_MCP_CONFIG", "ROBLOXSCRIPT_MCP_CONFIG"]) {
+        if !p.trim().is_empty() { return PathBuf::from(p.trim()); }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() { return dir.join(MCP_CONFIG_FILE); }
+    }
+    PathBuf::from(MCP_CONFIG_FILE)
+}
+
+fn read_mcp_config() -> McpConfig {
+    let path = mcp_config_path();
+    let Ok(text) = std::fs::read_to_string(&path) else { return McpConfig::default() };
+    match serde_json::from_str::<McpConfig>(&text) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::warn!("{} is unreadable ({e}) - ignoring it", path.display());
+            McpConfig::default()
+        }
+    }
+}
+
+fn write_mcp_config(cfg: &McpConfig) -> Result<(), String> {
+    let path = mcp_config_path();
+    let text = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text).map_err(|e| format!("could not write {}: {e}", tmp.display()))?;
+    // Atomic replace, so a crash mid-write never truncates the config.
+    std::fs::rename(&tmp, &path).map_err(|e| format!("could not replace {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Newest of these by mtime (Roblox leaves zombie version folders behind).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn newest_by_mtime(mut paths: Vec<PathBuf>) -> Option<PathBuf> {
+    paths.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    paths.pop()
+}
+
+fn studio_mcp_override() -> Option<PathBuf> {
+    for key in ["OR_STUDIO_MCP_PATH", "ZS_STUDIO_MCP_PATH"] {
+        let Ok(v) = std::env::var(key) else { continue };
+        if v.trim().is_empty() { continue; }
+        let p = PathBuf::from(v.trim());
+        if p.is_file() { return Some(p); }
+        if p.is_dir() {
+            #[cfg(target_os = "macos")]
+            let candidate = p.join("Contents").join("MacOS").join("StudioMCP");
+            #[cfg(not(target_os = "macos"))]
+            let candidate = p.join("StudioMCP.exe");
+            if candidate.is_file() { return Some(candidate); }
+        }
+        tracing::warn!("{key} is set but is not a StudioMCP binary: {v}");
+    }
+    None
+}
+
+/// Locate the StudioMCP.exe of the LIVE Studio install. Roblox's mcp.bat
+/// hard-codes ONE version path; when Studio auto-updates that folder is deleted
+/// and the .bat's fallback branch is broken batch syntax, so StudioMCP never
+/// launches and the bridge sees 0 tools. Discovery sidesteps it (same fix
+/// ZeroScript's launch_studio_mcp.py makes).
+#[cfg(windows)]
+fn find_studio_mcp() -> Option<PathBuf> {
+    if let Some(p) = studio_mcp_override() { return Some(p); }
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(v) = std::env::var("LOCALAPPDATA") { roots.push(PathBuf::from(v).join("Roblox").join("Versions")); }
+    for key in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(v) = std::env::var(key) { roots.push(PathBuf::from(v).join("Roblox").join("Versions")); }
+    }
+    // Zombie version folders still contain StudioMCP.exe but no Studio exe -
+    // launching one gives 0 tools. Prefer folders that ALSO have Studio.
+    let (mut paired, mut orphans) = (Vec::new(), Vec::new());
+    for root in roots {
+        let Ok(entries) = std::fs::read_dir(&root) else { continue };
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() { continue; }
+            let mcp = dir.join("StudioMCP.exe");
+            if !mcp.is_file() { continue; }
+            if dir.join("RobloxStudioBeta.exe").is_file() || dir.join("RobloxStudio.exe").is_file() {
+                paired.push(mcp);
+            } else {
+                orphans.push(mcp);
+            }
+        }
+    }
+    newest_by_mtime(paired).or_else(|| newest_by_mtime(orphans))
+}
+
+#[cfg(not(windows))]
+fn find_studio_mcp() -> Option<PathBuf> {
+    if let Some(p) = studio_mcp_override() { return Some(p); }
+    // macOS app bundles (Roblox Studio has no Linux build).
+    let mut apps: Vec<PathBuf> = vec![PathBuf::from("/Applications/RobloxStudio.app")];
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            apps.push(PathBuf::from(&home).join("Applications").join("RobloxStudio.app"));
+            apps.push(PathBuf::from(&home).join("Applications").join("Roblox.app"));
+        }
+    }
+    apps.push(PathBuf::from("/Applications/Roblox.app"));
+    for app in apps {
+        let macos = app.join("Contents").join("MacOS");
+        let mcp = macos.join("StudioMCP");
+        if !mcp.is_file() { continue; }
+        if ["RobloxStudio", "RobloxStudioBeta", "Roblox"].iter().any(|n| macos.join(n).is_file()) {
+            return Some(mcp);
+        }
+    }
+    None
+}
+
+/// Windows ships npx/npm/py/uvx as .cmd/.exe shims that CreateProcess cannot
+/// always start directly; route those through cmd /C (ZeroScript does the same).
+fn resolve_launcher(program: String, args: Vec<String>) -> (String, Vec<String>) {
+    #[cfg(windows)]
+    {
+        let has_ext = std::path::Path::new(&program).extension().is_some();
+        let base = std::path::Path::new(&program)
+            .file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if !has_ext && matches!(base.as_str(), "npx" | "npm" | "yarn" | "pnpm" | "bunx" | "uvx" | "uv" | "py" | "python" | "python3") {
+            let mut all = vec!["/C".to_string(), program];
+            all.extend(args);
+            return ("cmd".to_string(), all);
+        }
+    }
+    (program, args)
+}
+
+// ── addon runtime helpers ──────────────────────────────────────────────────
+async fn addon_spawn(state: &AppState, sid: &str, spec: &ServerSpec) -> Result<usize, String> {
+    let envs: Vec<(String, String)> = spec.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let tools = {
+        let mut addons = state.addons.lock().await;
+        let runtime = addons.entry(sid.to_string()).or_insert_with(|| {
+            McpRuntime::for_command(Arc::new(AtomicBool::new(false)), spec.command.clone(), spec.args.clone(), envs.clone())
+        });
+        runtime.program = Some(spec.command.clone());
+        runtime.program_args = spec.args.clone();
+        runtime.program_env = envs;
+        runtime.list_tools().await.map_err(|e| format!("{e:#}"))?
+    };
+    state.addon_tools.lock().await.insert(sid.to_string(), tools.clone());
+    state.addon_specs.lock().await.insert(sid.to_string(), spec.clone());
+    Ok(tools.len())
+}
+
+async fn addon_call(state: &AppState, sid: &str, name: &str, args: serde_json::Value) -> anyhow::Result<McpCall> {
+    let mut addons = state.addons.lock().await;
+    let runtime = addons.get_mut(sid)
+        .ok_or_else(|| anyhow::anyhow!("MCP server '{sid}' is not connected"))?;
+    runtime.call_tool(name, args).await
+}
+
+/// Which addon owns this tool name? Accepts both the bare name and the
+/// "server/tool" form the merged catalogue advertises on a collision.
+async fn addon_owner(state: &AppState, name: &str) -> Option<(String, String)> {
+    if let Some((prefix, bare)) = name.split_once('/') {
+        let known = state.addons.lock().await.contains_key(prefix) || state.addon_specs.lock().await.contains_key(prefix);
+        if known && !bare.is_empty() { return Some((prefix.to_string(), bare.to_string())); }
+    }
+    let tools = state.addon_tools.lock().await;
+    let mut ids: Vec<&String> = tools.keys().collect();
+    ids.sort();
+    for sid in ids {
+        if tools.get(sid).map(|list| list.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))).unwrap_or(false) {
+            return Some((sid.clone(), name.to_string()));
+        }
+    }
+    None
+}
+
+/// Route a tool call: addon (by prefix or by ownership) else Roblox Studio.
+async fn route_call(state: &AppState, name: &str, args: serde_json::Value) -> anyhow::Result<McpCall> {
+    if let Some((sid, bare)) = addon_owner(state, name).await {
+        info!("routing '{name}' to addon MCP server '{sid}'");
+        return addon_call(state, &sid, &bare, args).await;
+    }
+    roblox_tool(state, name, args).await
+}
+
+/// Merged tool catalogue: Roblox's, then each addon's. A name two servers both
+/// expose is advertised as "server/tool" (the extension knows how to route
+/// either form), exactly like the Python bridge.
+async fn addons_merged_tools(state: &AppState, roblox_tools: &[serde_json::Value]) -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
+    let specs = state.addon_specs.lock().await.clone();
+    let mut ids: Vec<String> = specs.keys().cloned().collect();
+    ids.sort();
+    let mut seen: Vec<String> = roblox_tools.iter()
+        .filter_map(|t| t.get("name").and_then(|v| v.as_str()).map(str::to_string)).collect();
+    let mut merged: Vec<serde_json::Value> = Vec::new();
+    let mut servers: Vec<serde_json::Value> = Vec::new();
+    for sid in ids {
+        let spec = specs.get(&sid).cloned().unwrap_or(ServerSpec { command: String::new(), args: Vec::new(), env: Default::default() });
+        let (mut tools, alive) = {
+            let mut addons = state.addons.lock().await;
+            match addons.get_mut(&sid) {
+                // Only re-list a LIVE server. list_tools() would respawn a dead
+                // one, and a server that cannot start (no uvx, Blender closed)
+                // must not burn seconds on every list_commands - Connect Blender
+                // / add_server is what revives it.
+                Some(rt) if rt.child_alive() => (rt.list_tools().await.ok().unwrap_or_default(), true),
+                Some(_) => (Vec::new(), false),
+                None => (Vec::new(), false),
+            }
+        };
+        if !alive {
+            // Offline: still show what it last advertised (no second lock here -
+            // the addons guard is already released above).
+            tools = state.addon_tools.lock().await.get(&sid).cloned().unwrap_or_default();
+        }
+        if !tools.is_empty() { state.addon_tools.lock().await.insert(sid.clone(), tools.clone()); }
+        let target = format!("{} {}", spec.command, spec.args.join(" ")).trim().to_string();
+        for mut tool in tools {
+            if let Some(obj) = tool.as_object_mut() {
+                let bare = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if bare.is_empty() { continue; }
+                if seen.iter().any(|s| s == &bare) {
+                    obj.insert("name".to_string(), serde_json::Value::String(format!("{sid}/{bare}")));
+                } else {
+                    seen.push(bare);
+                }
+                obj.insert("server".to_string(), serde_json::Value::String(sid.clone()));
+            }
+            merged.push(tool);
+        }
+        let count = state.addon_tools.lock().await.get(&sid).map(|t| t.len()).unwrap_or(0);
+        servers.push(serde_json::json!({
+            "id": sid, "name": sid, "alive": alive, "tools": count, "command": target,
+        }));
+    }
+    (merged, servers)
+}
+
+/// Status rows for every configured addon (alive + tool count), for the
+/// servers[] array the extension already renders.
+async fn addons_status(state: &AppState) -> Vec<serde_json::Value> {
+    let specs = state.addon_specs.lock().await.clone();
+    let mut ids: Vec<String> = specs.keys().cloned().collect();
+    ids.sort();
+    let mut out = Vec::new();
+    for sid in ids {
+        let spec = specs.get(&sid).cloned().unwrap_or(ServerSpec { command: String::new(), args: Vec::new(), env: Default::default() });
+        let count = state.addon_tools.lock().await.get(&sid).map(|t| t.len()).unwrap_or(0);
+        let alive = {
+            let mut addons = state.addons.lock().await;
+            addons.get_mut(&sid).map(|rt| rt.child_alive()).unwrap_or(false)
+        };
+        out.push(serde_json::json!({
+            "id": sid, "name": sid, "alive": alive, "tools": count,
+            "command": format!("{} {}", spec.command, spec.args.join(" ")).trim(),
+        }));
+    }
+    out
+}
+
+/// Boot every configured addon, best-effort: a missing Blender must never delay
+/// (or block) the Roblox connection.
+async fn boot_addons(state: &AppState) {
+    let cfg = read_mcp_config();
+    for (sid, spec) in cfg.mcp_servers.iter() {
+        if sid == PRIMARY_SERVER_ID { continue; }
+        match addon_spawn(state, sid, spec).await {
+            Ok(n) => info!("addon MCP '{sid}' ready ({n} tools) via {}", spec.command),
+            Err(e) => tracing::warn!("addon MCP '{sid}' did not start: {e}"),
+        }
+    }
+    if cfg.mcp_servers.keys().any(|k| k != PRIMARY_SERVER_ID) {
+        info!("mcp config: {}", mcp_config_path().display());
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     roblox_queue: Arc<Mutex<VecDeque<Payload>>>,
@@ -111,6 +409,15 @@ struct AppState {
     workspace: Arc<workspace::Workspace>,
     result_tx: broadcast::Sender<ExecResult>,
     roblox_mcp: Arc<Mutex<McpRuntime>>,
+    /// ADDON MCP servers (Blender, Sketchfab, …) — one stdio client each, spawned
+    /// from mcp_servers.json exactly like the primary. This is the ZeroScript
+    /// model: every server in the config is a real MCP client, tools are merged,
+    /// and any image content item they return rides the same reply path.
+    addons: Arc<Mutex<HashMap<String, McpRuntime>>>,
+    /// tool definitions per addon (also the routing table for bare tool names).
+    addon_tools: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
+    /// the config as loaded, so status can show a server whose process is down.
+    addon_specs: Arc<Mutex<HashMap<String, ServerSpec>>>,
     /// Count of in-flight MCP tools/list/probe calls. Status probes skip while
     /// this is non-zero so they never fight a 20s execute_luau for the mutex.
     mcp_in_flight: Arc<AtomicUsize>,
@@ -127,6 +434,9 @@ impl AppState {
             workspace,
             result_tx,
             roblox_mcp: Arc::new(Mutex::new(McpRuntime::new(mcp_alive))),
+            addons: Arc::new(Mutex::new(HashMap::new())),
+            addon_tools: Arc::new(Mutex::new(HashMap::new())),
+            addon_specs: Arc::new(Mutex::new(HashMap::new())),
             mcp_in_flight: Arc::new(AtomicUsize::new(0)),
             roblox_proc,
             roblox_editor_connected: Arc::new(AtomicBool::new(false)),
@@ -142,12 +452,25 @@ struct McpRuntime {
     next_id: u64,
     tools: Vec<serde_json::Value>,
     alive: Arc<AtomicBool>,
+    /// Set for ADDON servers (mcp_servers.json): spawn exactly this command.
+    /// None = the built-in Roblox Studio launcher (discovery / mcp.bat).
+    program: Option<String>,
+    program_args: Vec<String>,
+    program_env: Vec<(String, String)>,
 }
 
 impl McpRuntime {
     fn new(alive: Arc<AtomicBool>) -> Self {
-        Self { child: None, stdin: None, stdout: None, next_id: 1, tools: Vec::new(), alive }
+        Self { child: None, stdin: None, stdout: None, next_id: 1, tools: Vec::new(), alive,
+               program: None, program_args: Vec::new(), program_env: Vec::new() }
     }
+
+    /// An addon server (Blender, Sketchfab, …) spawned from its own command.
+    fn for_command(alive: Arc<AtomicBool>, program: String, program_args: Vec<String>, program_env: Vec<(String, String)>) -> Self {
+        Self { child: None, stdin: None, stdout: None, next_id: 1, tools: Vec::new(), alive,
+               program: Some(program), program_args, program_env }
+    }
+
 
     fn launcher() -> anyhow::Result<(String, Vec<String>)> {
         if let Ok(raw) = std::env::var("OR_MCP_COMMAND").or_else(|_| std::env::var("ROBLOXSCRIPT_MCP_COMMAND")) {
@@ -155,10 +478,19 @@ impl McpRuntime {
             let program = parts.next().ok_or_else(|| anyhow::anyhow!("OR_MCP_COMMAND is empty"))?;
             return Ok((program.to_string(), parts.map(str::to_string).collect()));
         }
+        // PREFER the newest StudioMCP.exe we can find over %LOCALAPPDATA%\Roblox\
+        // mcp.bat. Roblox's .bat hard-codes ONE Studio version path; after a
+        // Studio auto-update that folder is eventually deleted and the .bat's
+        // fallback branch is broken batch syntax, so StudioMCP.exe never launches
+        // and the bridge sees 0 tools (diagnosed by ZeroScript; same fix here).
+        if let Some(exe) = find_studio_mcp() {
+            info!("MCP launcher: newest StudioMCP.exe at {}", exe.display());
+            return Ok((exe.display().to_string(), Vec::new()));
+        }
         let local = std::env::var("LOCALAPPDATA").map_err(|_| anyhow::anyhow!("LOCALAPPDATA is unavailable; set OR_MCP_COMMAND to Studio's MCP launcher"))?;
         let bat = PathBuf::from(local).join("Roblox").join("mcp.bat");
         if !bat.is_file() {
-            anyhow::bail!("Roblox Studio MCP launcher not found at {}. In Studio: Assistant → … → Manage MCP Servers → Enable Studio as MCP server.", bat.display());
+            anyhow::bail!("No StudioMCP.exe found in any Roblox install and no mcp.bat at {}. In Studio: Assistant → … → Manage MCP Servers → Enable Studio as MCP server.", bat.display());
         }
         Ok(("cmd".to_string(), vec!["/C".to_string(), bat.to_string_lossy().to_string()]))
     }
@@ -206,23 +538,28 @@ impl McpRuntime {
             return Ok(());
         }
         self.reset().await;
-        let (program, args) = Self::launcher()?;
-        let mut cmd = Command::new(program);
-        cmd.args(args)
+        let (program, args) = match self.program.clone() {
+            Some(p) => (p, self.program_args.clone()),
+            None => Self::launcher()?,
+        };
+        let (program, args) = resolve_launcher(program, args);
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        for (k, v) in &self.program_env { cmd.env(k, v); }
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
-        let mut child = cmd.spawn().map_err(|e| { tracing::error!("MCP helper spawn failed: {e}"); e })?;
-        info!("MCP helper spawned OK");
+        let mut child = cmd.spawn().map_err(|e| { tracing::error!("MCP helper spawn failed ({program}): {e}"); e })?;
+        info!("MCP helper spawned OK: {program} {}", args.join(" "));
         self.stdin = child.stdin.take();
         self.stdout = child.stdout.take().map(|s| BufReader::new(s).lines());
         self.child = Some(child);
         let _ = self.request("initialize", serde_json::json!({
             "protocolVersion": "2025-06-18",
             "capabilities": {},
-            "clientInfo": {"name": "OR", "version": "1.14.1"}
+            "clientInfo": {"name": "OR", "version": env!("CARGO_PKG_VERSION")}
         })).await.map_err(|e| { tracing::warn!("MCP initialize failed: {e:#}"); e })?;
         self.notify("notifications/initialized", serde_json::json!({})).await?;
         self.alive.store(true, Ordering::Relaxed);
@@ -444,6 +781,13 @@ async fn start() -> anyhow::Result<()> {
             Ok(()) => {
                 info!("window closed — killing MCP helper tree and exiting");
                 shutdown_state.roblox_mcp.lock().await.reset().await;
+                {
+                    let mut addons = shutdown_state.addons.lock().await;
+                    for (sid, rt) in addons.iter_mut() {
+                        info!("stopping addon MCP '{sid}'");
+                        rt.reset().await;
+                    }
+                }
                 std::process::exit(0);
             }
             Err(e) => {
@@ -461,6 +805,23 @@ async fn start() -> anyhow::Result<()> {
 }
 
 async fn run_server(state: AppState, addr: SocketAddr, start: std::time::Instant, ui: Arc<gui::UiShared>) -> anyhow::Result<()> {
+    // Addon MCP servers (Blender, …) start in the background: a dead one must
+    // never delay Studio coming up.
+    let boot_state = state.clone();
+    let boot_ui = ui.clone();
+    tokio::spawn(async move {
+        boot_addons(&boot_state).await;
+        let extra = addons_status(&boot_state).await;
+        if !extra.is_empty() {
+            let names: Vec<String> = extra.iter().filter_map(|s| {
+                let id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let alive = s.get("alive").and_then(|v| v.as_bool()).unwrap_or(false);
+                let n = s.get("tools").and_then(|v| v.as_u64()).unwrap_or(0);
+                if id.is_empty() { None } else { Some(format!("{id} {} ({n} tools)", if alive { "ready" } else { "offline" })) }
+            }).collect();
+            boot_ui.log(&format!("addon MCP servers: {}", names.join(" · ")));
+        }
+    });
     let watcher_state = state.clone();
     let watcher_ui = ui.clone();
     tokio::spawn(async move {
@@ -739,7 +1100,18 @@ async fn handle_legacy_ws(ws_stream: tokio_tungstenite::WebSocketStream<tokio::n
                                         mcp.probe_studio().await.is_ok()
                                     };
                                     state.roblox_editor_connected.store(studio, Ordering::Relaxed);
-                                    serde_json::json!({"type":"tools","id":id,"ok":studio,"mcp_alive":true,"studio":studio,"tools":tools,"servers":[{"id":"roblox","name":"Roblox Studio MCP","alive":studio,"tools":if studio { tools.len() } else { 0 }}]})
+                                    {
+                                        // Roblox's tools first, then every addon
+                                        // MCP server's (Blender, Sketchfab, …), with
+                                        // collisions advertised as "server/tool".
+                                        let roblox_count = tools.len();
+                                        let (addon_defs, addon_servers) = addons_merged_tools(&state, &tools).await;
+                                        let mut all_tools = tools;
+                                        all_tools.extend(addon_defs);
+                                        let mut servers = vec![serde_json::json!({"id":"roblox","name":"Roblox Studio MCP","alive":studio,"tools":if studio { roblox_count } else { 0 }})];
+                                        servers.extend(addon_servers);
+                                        serde_json::json!({"type":"tools","id":id,"ok":studio,"mcp_alive":true,"studio":studio,"tools":all_tools,"servers":servers})
+                                    }
                                 },
                                 Err(error) => serde_json::json!({"type":"tools","id":id,"ok":false,"mcp_alive":false,"studio":false,"tools":[],"error":error.to_string()}),
                             }
@@ -812,7 +1184,7 @@ async fn handle_legacy_ws(ws_stream: tokio_tungstenite::WebSocketStream<tokio::n
                         tokio::spawn(async move {
                             let outcome: anyhow::Result<(String, Vec<serde_json::Value>)> = match eng.as_str() {
                                 "local" => { workspace::dispatch(&state2.workspace, &name, args).await.map(|t| (t, Vec::new())).map_err(anyhow::Error::msg) }
-                                "roblox" => roblox_tool(&state2, &name, args).await.map(|c| (c.text, c.images)),
+                                "roblox" => route_call(&state2, &name, args).await.map(|c| (c.text, c.images)),
                                 _ => Err(anyhow::anyhow!("unknown engine")),
                             };
                             let response = match outcome {
@@ -822,7 +1194,56 @@ async fn handle_legacy_ws(ws_stream: tokio_tungstenite::WebSocketStream<tokio::n
                             let _ = tx.send(response.to_string());
                         });
                     },
-                    "add_server" | "remove_server" => { send_json(&out_tx, serde_json::json!({"type":"error","id":id,"error":"Custom MCP servers are not supported by the native bridge yet; use Roblox Studio's built-in MCP server directly."})); },
+                    "add_server" => {
+                        let sid = val.get("server_id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        let command = val.get("command").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        if sid.is_empty() || command.is_empty() {
+                            send_json(&out_tx, serde_json::json!({"type":"server_changed","id":id,"ok":false,"error":"server_id and command are required"}));
+                        } else if sid == PRIMARY_SERVER_ID {
+                            send_json(&out_tx, serde_json::json!({"type":"server_changed","id":id,"ok":false,"error":format!("'{PRIMARY_SERVER_ID}' is the primary server and cannot be edited")}));
+                        } else {
+                            let args: Vec<String> = val.get("args").and_then(|v| v.as_array())
+                                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                                .unwrap_or_default();
+                            let env: std::collections::BTreeMap<String, String> = val.get("env").and_then(|v| v.as_object())
+                                .map(|o| o.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+                                .unwrap_or_default();
+                            let spec = ServerSpec { command, args, env };
+                            // Persist first: a server we cannot save would vanish on restart.
+                            let mut cfg = read_mcp_config();
+                            cfg.mcp_servers.insert(sid.clone(), spec.clone());
+                            let saved = write_mcp_config(&cfg);
+                            let spawned = if saved.is_ok() { addon_spawn(&state, &sid, &spec).await } else { Err("config not saved".to_string()) };
+                            let (ok, error) = match (&saved, &spawned) {
+                                (Err(e), _) => (false, Some(e.clone())),
+                                (_, Err(e)) => (false, Some(format!("saved to the config, but the server did not start: {e}"))),
+                                _ => (true, None),
+                            };
+                            let mut servers = addons_status(&state).await;
+                            servers.push(serde_json::json!({"id": PRIMARY_SERVER_ID, "name": "Roblox Studio MCP",
+                                "alive": state.roblox_editor_connected.load(Ordering::Relaxed), "tools": 0}));
+                            send_json(&out_tx, serde_json::json!({"type":"server_changed","id":id,"ok":ok,
+                                "server_id":sid,"tools":spawned.clone().ok(),"error":error,"servers":servers,
+                                "config": mcp_config_path().display().to_string()}));
+                        }
+                    }
+                    "remove_server" => {
+                        let sid = val.get("server_id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        if sid.is_empty() {
+                            send_json(&out_tx, serde_json::json!({"type":"server_changed","id":id,"ok":false,"error":"server_id is required"}));
+                        } else if sid == PRIMARY_SERVER_ID {
+                            send_json(&out_tx, serde_json::json!({"type":"server_changed","id":id,"ok":false,"error":format!("'{PRIMARY_SERVER_ID}' is the primary server and cannot be removed")}));
+                        } else {
+                            let mut cfg = read_mcp_config();
+                            cfg.mcp_servers.remove(&sid);
+                            let saved = write_mcp_config(&cfg);
+                            if let Some(mut rt) = state.addons.lock().await.remove(&sid) { rt.reset().await; }
+                            state.addon_tools.lock().await.remove(&sid);
+                            state.addon_specs.lock().await.remove(&sid);
+                            send_json(&out_tx, serde_json::json!({"type":"server_changed","id":id,"ok":saved.is_ok(),
+                                "server_id":sid,"error":saved.err(),"servers":addons_status(&state).await}));
+                        }
+                    },
                     _ => { send_json(&out_tx, serde_json::json!({"type":"error","id":id,"error":"unknown bridge message type"})); }
                 }
             }

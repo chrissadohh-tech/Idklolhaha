@@ -116,8 +116,41 @@ let robloxEditorConnected = false;
 let localReady = false; // agent's workspace is up (from /api/status local_ready)
 let localFull = false; // AgentScript FULL PC ACCESS (agent is source of truth)
 let localRoot = ""; // workspace path, injected into the AI's state line
-let blenderAddon = false; // blender-mcp addon listening on TCP 9876
+let blenderAddon = false; // Blender is connected (either transport below)
+// "mcp" = the blender-mcp SERVER is hosted by the agent (a config-driven addon,
+// same method as ZeroScript: its tools merge into the catalogue and its images
+// arrive as MCP image content items). "tcp" = the direct socket to the Blender
+// addon on 9876, which OR's own convenience ops still use.
+let blenderMode = "";
 let blenderError = "";
+// The command that hosts blender-mcp; overridable via chrome.storage
+// "rs-blender-mcp-cmd" for uvx/pipx/manual installs.
+const BLENDER_MCP_CMD = { command: "uvx", args: ["blender-mcp"] };
+// blender-mcp's OWN tool names - what the addon MCP server answers. OR's
+// convenience tools (blender_add_cube, blender_send_to_studio, …) are NOT here:
+// those are built on blender_ops.py and stay on the direct transport.
+const BLENDER_MCP_TOOLS = new Set([
+  "get_scene_info", "get_object_info", "get_viewport_screenshot", "execute_blender_code",
+  "download_polyhaven_asset", "set_texture", "get_polyhaven_status",
+  "get_hyper3d_status", "generate_hyper3d_model_via_text", "generate_hyper3d_model_via_images",
+  "poll_rodin_job_status", "import_generated_asset", "generate_hunyuan3d_model",
+  "poll_hunyuan_job_status", "import_hunyuan_asset",
+]);
+
+// Register/refresh the blender-mcp addon server in the AGENT (mcp_servers.json).
+async function blenderMcpRegister() {
+  let cmd = BLENDER_MCP_CMD;
+  try {
+    const o = await new Promise((res) => chrome.storage.local.get("rs-blender-mcp-cmd", res));
+    if (o && o["rs-blender-mcp-cmd"] && o["rs-blender-mcp-cmd"].command) cmd = o["rs-blender-mcp-cmd"];
+  } catch {}
+  const r = await send({
+    type: "add_server", server_id: "blender",
+    command: cmd.command, args: cmd.args || [], env: cmd.env,
+  }, 45000);
+  if (r && r.ok) return { ok: true, tools: r.tools, servers: r.servers };
+  return { ok: false, error: (r && r.error) || "the agent refused the blender MCP server" };
+}
 let blenderScriptsReady = false;
 const BLENDER_TOOL_NAMES = new Set([
   "get_scene_info", "get_object_info", "execute_blender_code", "get_viewport_screenshot",
@@ -543,7 +576,8 @@ function statusObj() {
     local_root: localRoot,
     tools: mergeBlenderTools(toolsCache).length,
     servers: blenderServers(serversCache), engine,
-    blender: blenderAddon, blender_error: blenderError || undefined,
+    blender: blenderAddon, blender_mode: blenderMode || undefined,
+    blender_error: blenderError || undefined,
     // Absent on agents older than 1.18.1 - the UI reads "" as "old build".
     agent_version: agentVersion || undefined,
   };
@@ -875,12 +909,38 @@ async function probeBlenderTcp() {
 }
 
 async function connectBlender() {
+  // 1) ZeroScript's method: host blender-mcp as an MCP server INSIDE the agent,
+  //    which merges its tools and forwards its image content items.
+  try {
+    const reg = await blenderMcpRegister();
+    if (reg.ok) {
+      blenderMode = "mcp";
+      setBlender(true, "");
+      try {
+        const ping = await blenderCall("get_scene_info", {}, 20000);
+        if (ping && ping.ok === false) {
+          setBlender(false, ping.error);           // server up, Blender addon not
+          broadcastStatus();
+          return { ok: false, blender: false, mode: "mcp", error: ping.error };
+        }
+      } catch {}
+      broadcastStatus();
+      log("Blender connected via the MCP server (agent addon)");
+      return { ok: true, blender: true, mode: "mcp", tools: reg.tools };
+    }
+    log("blender-mcp addon unavailable (" + (reg.error || "is uvx installed?") + ") - using the direct 9876 socket");
+  } catch (e) {
+    log("blender-mcp addon registration failed: " + String(e && e.message || e));
+  }
+  // 2) Fallback: the direct socket to the Blender addon.
   const p = await probeBlenderTcp();
   if (!p.ok) {
+    blenderMode = "";
     setBlender(false, p.error);
     broadcastStatus();
     return { ok: false, blender: false, error: p.error };
   }
+  blenderMode = "tcp";
   setBlender(true, "");
   try {
     const ping = await blenderCall("get_scene_info", {}, 20000);
@@ -891,7 +951,7 @@ async function connectBlender() {
     }
   } catch {}
   broadcastStatus();
-  return { ok: true, blender: true };
+  return { ok: true, blender: true, mode: "tcp" };
 }
 
 async function agentWorkspaceRoot() {
@@ -1071,6 +1131,17 @@ async function blenderCall(name, args, timeout) {
     return { ok: false, error: "Blender is not connected. Click Connect Blender (Blender: N → MCP for Blender → Start MCP Server)." };
   }
   const run = async () => {
+    // MCP transport: when the agent hosts blender-mcp, its OWN tools go through
+    // it and come back with image content items (that is the capture path).
+    // OR's convenience ops (blender_* built on blender_ops.py) keep the direct
+    // path, so nothing that worked before stops working.
+    const bareM = String(name || "").split("/").pop().split(".").pop();
+    if (blenderMode === "mcp" && BLENDER_MCP_TOOLS.has(bareM)) {
+      const r = await send({ type: "call_tool", name: bareM, arguments: args || {}, timeout: timeout || 120000 }, (timeout || 120000) + 10000);
+      if (r && r.ok) return { ok: true, text: String(r.text || ""), images: r.images || [] };
+      if (r && r.kind !== "disconnected") return { ok: false, error: String((r && r.error) || "blender MCP call failed") };
+      // Bridge down: fall through to the direct socket rather than dead-ending.
+    }
     await ensureBlenderScripts();
     const payload = await blenderPayload(name, args);
     const statusPath = payload._orStatus || "";
@@ -1398,10 +1469,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "blender_status": {
-        sendResponse({ ok: blenderAddon, blender: blenderAddon, error: blenderError || undefined });
+        sendResponse({ ok: blenderAddon, blender: blenderAddon, mode: blenderMode || undefined, error: blenderError || undefined });
         break;
       }
       case "blender_disconnect": {
+        // Also drop the addon from the agent's config, so a later start doesn't
+        // silently re-spawn it.
+        if (blenderMode === "mcp") {
+          try { await send({ type: "remove_server", server_id: "blender" }, 15000); } catch {}
+        }
+        blenderMode = "";
         setBlender(false, "");
         broadcastStatus();
         sendResponse({ ok: true, blender: false });

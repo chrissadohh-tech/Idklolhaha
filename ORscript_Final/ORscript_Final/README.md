@@ -51,6 +51,8 @@ Large `execute_luau` scripts are auto-chunked around 24 KB so Studio's parser ne
   - Studio: the picture comes back as an MCP **image content item** and is forwarded as base64 (needs `or-agent` 1.18.1+ to survive the bridge).
   - Blender: the addon writes the PNG, and the agent reads those bytes back (`read_file_base64`) and deletes the hand-off file.
   - Check which agent is actually running: open <http://127.0.0.1:3000/> — it returns `{"service":"or-agent","version":"…"}`. `or_status {}` reports it too.
+- **Studio MCP is discovered, not assumed.** The agent launches the NEWEST `StudioMCP.exe` across installed Studio versions (preferring version folders that still contain Studio itself, so an update's zombie folder can't be picked) instead of `%LOCALAPPDATA%\Roblox\mcp.bat`, whose hard-coded version path breaks after a Studio update. Override with `OR_STUDIO_MCP_PATH`.
+- **More MCP servers**: `mcp_servers.json` next to `or-agent.exe` (override with `OR_MCP_CONFIG`) takes the same `{"mcpServers": {"name": {"command": …, "args": […]}}}` shape as ZeroScript's `config.json`. Each entry is spawned as a real MCP server, its tools merge into `list_commands` (collisions advertised as `server/tool`), and anything it returns as an MCP image is attached to the chat. **Connect Blender** registers `uvx blender-mcp` this way (override the command with the `rs-blender-mcp-cmd` storage key) and falls back to the direct 9876 socket when uvx is unavailable.
 - Personas (Builder / Scripter / Animator / Fixer), Extra Thinking, Forge GUI, Image → Model, auto-fix playtest errors.
 
 ---
