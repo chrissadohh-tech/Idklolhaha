@@ -1295,14 +1295,27 @@
   // dropped inside or-agent.exe; host present = Studio itself sent no picture.
   function captureFailureHint(name) {
     const n = A.toolNames.size;
+    // Version first: a 1.18.1+ agent carries Studio's MCP images itself, so with
+    // a current build the Python host (and its 28th tool) is NOT required - a
+    // capture that still comes back empty means Studio produced no picture.
+    const v = String((A.bridge && A.bridge.agent_version) || "");
+    if (!agentVersionBelow(v, AGENT_CAPTURE_MIN)) {
+      ui.banner("warn", "Studio returned no picture",
+        "The agent is current, so check Studio: Manage MCP Servers, and that the place is open.");
+      return `ERROR calling '${name}': the capture came back with no text and no image, but the running agent ` +
+        `(v${v}) does carry MCP images - so Studio itself produced no picture. Open the place in Studio and check ` +
+        `Assistant -> Manage MCP Servers -> "Enable Studio as MCP Server", then call ${name} again. ` +
+        `(A leftover StudioMCP.exe holding port 13469 also does this - close Studio fully, kill StudioMCP.exe in Task Manager, reopen Studio.)`;
+    }
     const hostUp = A.toolNames.has("or_host_read_image");
     if (!hostUp) {
       ui.banner("warn", "Studio captures need the Python host",
         'Close OR, then start it with "Start OR Agent.bat" instead of or-agent.exe.');
       return `ERROR calling '${name}': the capture came back with no text and no image. ` +
-        `The Python Studio host is not in the loop (TOOLS ${n}, needs 28), so or-agent.exe dropped the picture: ` +
-        `it was started without the host, or the previous agent still owned port 3000. Close OR and run ` +
-        `"Start OR Agent.bat" (it closes a running agent first and prints what it found), then call ${name} again.`;
+        `TOOLS ${n} (the Python host would add a 28th tool), so the old or-agent.exe dropped the picture: ` +
+        `either it was started without the host, or an old process still owns port 3000. Best fix: use the rebuilt ` +
+        `or-agent.exe from the repo (no host needed). Otherwise close OR and run "Start OR Agent.bat", ` +
+        `then call ${name} again.`;
     }
     return `ERROR calling '${name}': the capture came back with no text and no image. ` +
       `The Python host IS running (TOOLS ${n}), so Studio itself returned no picture: open the place in Studio and check ` +

@@ -69,11 +69,16 @@ ok("leftover StudioMCP.exe is cleaned (ZeroScript's 'empty captures' fix)",
   HOST.includes("def studio_app_running(") &&
   HOST.includes('taskkill", "/F", "/IM", "StudioMCP.exe"') &&
   HOST.includes("self.last_killed = clean_leftovers(self._pid)"));
-ok("a capture failure says WHICH fix applies (tool count, not a guess)",
+ok("a capture failure says WHICH fix applies (version + tool count, not a guess)",
   mainJS.includes("function captureFailureHint(") &&
+  mainJS.includes("if (!agentVersionBelow(v, AGENT_CAPTURE_MIN))") &&
+  mainJS.includes("Studio itself produced no picture") &&
   mainJS.includes("A.toolNames.has(\"or_host_read_image\")") &&
-  mainJS.includes("TOOLS ${n}, needs 28") &&
+  mainJS.includes("would add a 28th tool") &&
   mainJS.includes("Start OR Agent.bat"));
+ok("a CURRENT agent never gets blamed on the host (wrong-diagnosis guard)",
+  mainJS.indexOf("if (!agentVersionBelow(v, AGENT_CAPTURE_MIN))") <
+  mainJS.indexOf("A.toolNames.has(\"or_host_read_image\")"));
 
 // ── the launcher ────────────────────────────────────────────────────────────
 ok("launcher only ever lets ONE agent own the bridge port (env var applies)",
