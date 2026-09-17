@@ -1,0 +1,18 @@
+   Compiling or-agent v1.18.1 (D:\a\Idklolhaha\Idklolhaha\ORscript_Final\ORscript_Final\agent)
+    Finished `release` profile [optimized] target(s) in 34.58s
+     Running unittests src\main.rs (target\release\deps\or_agent-8af7b15492b433ea.exe)
+
+running 10 tests
+test workspace::tests::base64_matches_rfc4648_vectors ... ok
+test workspace::tests::full_access_toggles_absolute_paths_and_gates_kill ... ok
+test workspace::tests::delete_and_move_guard_the_root ... ok
+test workspace::tests::read_file_base64_round_trips_a_binary_png ... ok
+test workspace::tests::edit_enforces_uniqueness_and_nearmiss_hint ... ok
+test workspace::tests::lenient_string_typed_args ... ok
+test workspace::tests::sandbox_rejects_escapes_and_absolute ... ok
+test workspace::tests::grep_search_tree_basics ... ok
+test workspace::tests::write_read_edit_roundtrip_preserves_crlf ... ok
+test workspace::tests::run_command_captures_and_times_out ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.17s
+
