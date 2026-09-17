@@ -78,28 +78,36 @@ ok("a capture failure says WHICH fix applies (tool count, not a guess)",
 // ── the launcher ────────────────────────────────────────────────────────────
 ok("launcher only ever lets ONE agent own the bridge port (env var applies)",
   BAT.includes("taskkill /F /IM or-agent.exe") &&
-  BAT.includes("keep port 3000") &&
+  BAT.includes("it owns port 3000") &&
   BAT.includes("find /i \"or-agent.exe\""));
 ok("launcher finds Python the way ZeroScript's start.bat does",
   BAT.includes("for %%C in (\"py -3\" \"python\")") &&
   BAT.includes(":validate_py") && BAT.includes("dir /b /ad /o-n") &&
   BAT.includes("%LOCALAPPDATA%\\Programs\\Python") &&
   BAT.includes("--version"));
-ok("launcher sets OR_MCP_COMMAND to the host (what the exe reads)",
-  BAT.includes("set \"OR_MCP_COMMAND=%PY% %HOST%\""));
-ok("a Python path with spaces goes through a cmd wrapper (the exe splits on spaces)",
-  BAT.includes("or_mcp_host.bat") && BAT.includes("cmd /C or_mcp_host.bat") &&
-  BAT.includes("find \" \""));
+ok("launcher points the agent at the host through a cmd wrapper",
+  BAT.includes("set \"OR_MCP_COMMAND=cmd /C or_mcp_host.bat\"") &&
+  BAT.includes('echo %PY% "%%~dp0%HOST%" %%*'));
+ok("launcher stores the setting for every future start (permanent, not per-run)",
+  BAT.includes("setx OR_MCP_COMMAND") && BAT.includes("%%~sI") &&
+  BAT.includes("Stored permanently"));
+ok("a Python path with spaces is handled by the wrapper, spaces-or-not",
+  BAT.includes("or_mcp_host.bat") && BAT.includes("8.3 names are off"));
 ok("launcher verifies before and after: --check, then waits for port 3000",
   BAT.includes("%HOST% --check") && BAT.includes("netstat -ano -p TCP") &&
   BAT.includes(":3000"));
+ok("launcher proves the host actually started (log growth, not a guess)",
+  BAT.includes("studio_mcp_host.log") && BAT.includes("LOGSIZE") &&
+  BAT.includes("the host did NOT start") && BAT.includes("grew"));
+ok("launcher NEVER closes itself - the window keeps every line on screen",
+  BAT.includes("pause >nul") && BAT.includes("or_agent_start.log") &&
+  !/^timeout \/t 8/m.test(BAT) === false || !BAT.includes("timeout /t 8 /nobreak >nul\r\nexit /b 0"));
 ok("launcher is readable when it fails (pause) and points at the log",
-  BAT.includes("pause") && BAT.includes("studio_mcp_host.log") &&
-  BAT.includes("Add python.exe to PATH"));
+  BAT.includes("Add python.exe to PATH") && BAT.includes("Press any key"));
 ok("launcher still starts or-agent.exe, from its own folder",
   BAT.includes("cd /d \"%~dp0\"") && BAT.includes("start \"\" \"%CD%\\or-agent.exe\""));
 ok("launcher tells the user what TOOLS should read afterwards",
-  BAT.includes("TOOLS should now read 28"));
+  BAT.includes("TOOLS must read 28"));
 
 // ── the extension-side decoder ──────────────────────────────────────────────
 ok("background decodes the markers once, for every tool funnel",
