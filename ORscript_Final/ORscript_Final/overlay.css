@@ -813,7 +813,8 @@ html.rs-light .rs-checkpoint-op { color: #1f2430; }
   animation: rs-mcp-spin-rotate 0.7s linear infinite;
 }
 @keyframes rs-mcp-spin-rotate { to { transform: rotate(360deg); } }
-/* ── composer mode enforcement (force Expert / DeepThink etc.) ────────────── */
+/* ── element hiding (providers park the site's own controls; DeepSeek's old
+   model-tab "enforcement" is gone - the unified model has no picker) ──────── */
 .rs-hide-el { display: none !important; }
 
 /* ── input cover: fully hides the text the extension types + sends ──

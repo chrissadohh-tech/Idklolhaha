@@ -6605,7 +6605,7 @@ function renderCards(panel) {
     }
 
     // Where the bar lives INSIDE the site's composer. We insert it as a real,
-    // in-flow DOM node (between the model tabs and the input on DeepSeek), so it
+    // in-flow DOM node (inside the composer above the input on DeepSeek), so it
     // takes the full composer width and never overlaps the site's own controls.
     // The mount point is derived from each provider's composerFrame()+getEditor(),
     // or a provider can override it via barMount(). Returns {parent, before}.

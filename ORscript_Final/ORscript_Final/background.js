@@ -530,7 +530,7 @@ function failAllPending(reason) {
   pending.clear();
 }
 
-// ── status push to any open DeepSeek tab + popup ─────────────────────────
+// ── status push to any open provider tab + popup ─────────────────────────
 function statusObj() {
   return {
     type: "rs-status", connected, mcpAlive, studio: studioConnected, studioApp, studioProc,
