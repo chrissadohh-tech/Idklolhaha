@@ -5654,3 +5654,47 @@ html.rs-light #rs-cards-rng:hover {
   box-sizing: border-box !important;
   font-size: 11px !important;
 }
+
+/* ── Diagnostic Debug System in Settings ── */
+.rs-diag-row {
+  display: flex !important;
+  gap: 6px !important;
+  margin: 8px 0 6px !important;
+}
+.rs-diag-btn {
+  flex: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 28px !important;
+  padding: 0 6px !important;
+  border-radius: 5px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--or-muted, #9aa0a8) !important;
+  font: 600 10.5px/1 var(--or-sans, sans-serif) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+.rs-diag-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--or-ink, #ece6dc) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+.rs-diag-btn.on {
+  background: color-mix(in srgb, #10b981 24%, rgba(0,0,0,0.4)) !important;
+  border-color: #10b981 !important;
+  color: #fff !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25) !important;
+}
+.rs-diag-btn[data-diag="off"].on {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.rs-diag-btn[data-diag="trace"].on {
+  background: color-mix(in srgb, #f59e0b 24%, rgba(0,0,0,0.4)) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.25) !important;
+}

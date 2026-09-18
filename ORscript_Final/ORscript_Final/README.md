@@ -51,6 +51,15 @@ Large `execute_luau` scripts are auto-chunked around 24 KB so Studio's parser ne
   - Studio: the picture comes back as an MCP **image content item** and is forwarded as base64 (needs `or-agent` 1.18.1+ to survive the bridge).
   - Blender: the addon writes the PNG, and the agent reads those bytes back (`read_file_base64`) and deletes the hand-off file.
   - Check which agent is actually running: open <http://127.0.0.1:3000/> — it returns `{"service":"or-agent","version":"…"}`. `or_status {}` reports it too.
+- **Diagnostic Debug System in Settings (Off / Basic / Detailed / Trace).** Provides structured runtime observability directly embedded in scripts created or modified by Or Script (no separate module needed).
+  - **Zero Overhead when Off:** When disabled, scripts run clean production code without diagnostics, loops, or overhead. When enabled, diagnostics are guardable and can be disabled without breaking gameplay.
+  - **No Output Spam:** High-frequency records stay in a bounded in-memory buffer (e.g. max 50 entries); Output only receives critical state transitions, transactions, and periodic summaries using structured format.
+  - **System-Specific Observability:**
+    - *Movement & Physics:* Periodic ~0.5s trajectory snapshots (Position, Velocity, Direction, GroundedState, Collisions, DistanceTraveled, and movement summaries).
+    - *Economy & Resources:* Exact tracking of earnings and losses (Player, Transaction Type, Source, BalanceBefore, AmountEarned/Lost, BalanceAfter, Result, Rejection Reason) across Coins, XP, Health, Shields, Items, and Lives.
+    - *AI & State Machines:* CurrentState, Target changes, Pathfinding states, Decision transitions, and Failure conditions.
+    - *Inventory & Gameflow:* Item transfers, capacity rejections, round states, participant counts, countdowns, and win/loss events.
+  - **Pre-Failure History & Divergence:** Preserves recent history before a failure occurs and compares Expected vs. Actual behavior to pinpoint the exact point of divergence.
 - **Persistent Visual Reference in Settings.** Drag and drop any reference image directly into **Settings → Visual Reference** and designate its target: **GUI Layout** or **Build / 3D Model**.
   - Once active, the reference image remains persistently bound across all subsequent turns.
   - **Mathematical accuracy:** For GUIs, the AI is instructed to calculate strict bounding boxes, UDim2 Scale vs. Offset ratios, coordinate formulas (`PosX = ItemX / CanvasWidth`), alignment constraints, exact pixel padding, border thicknesses, corner radii, and color palettes. For 3D models, it decomposes geometric volumes, symmetry axes, and stud dimensions calibrated to Roblox humanoid scales (~5 studs tall).

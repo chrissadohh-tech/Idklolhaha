@@ -295,5 +295,29 @@ ok("Overlay CSS styles Visual Reference dropzone, mode buttons, badges and cards
   css.includes(".rs-ref-badge.gui") &&
   css.includes(".rs-ref-badge.build"));
 
+// ── Diagnostic Debug System in Settings ───────────────────────────────────
+ok("Settings has Diagnostic Debugging section with Off/Basic/Detailed/Trace levels",
+  mainJS.includes('id="rs-diag-sec"') &&
+  mainJS.includes('data-diag="off"') &&
+  mainJS.includes('data-diag="basic"') &&
+  mainJS.includes('data-diag="detailed"') &&
+  mainJS.includes('data-diag="trace"'));
+
+ok("Diagnostic Debugging level is persisted in chrome.storage.local (rsDiagDebug)",
+  mainJS.includes('chrome.storage.local.set({ rsDiagDebug: level })') &&
+  mainJS.includes('r.rsDiagDebug'));
+
+ok("System prompt instructs AI to embed system-specific diagnostics directly in code (no separate module)",
+  cfgJS.includes("OR SCRIPT DIAGNOSTIC DEBUG SYSTEM (LEVEL:") &&
+  cfgJS.includes("NO SEPARATE MODULE: Embed diagnostic tracking DIRECTLY inside the script itself") &&
+  cfgJS.includes("TOGGLEABLE / SAFE") &&
+  cfgJS.includes("NEVER SPAM OUTPUT") &&
+  cfgJS.includes("EARNINGS and LOSSES"));
+
+ok("Overlay CSS styles Diagnostic Debugging level buttons with active indicators",
+  css.includes(".rs-diag-btn") &&
+  css.includes('.rs-diag-btn[data-diag="off"].on') &&
+  css.includes('.rs-diag-btn[data-diag="trace"].on'));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);

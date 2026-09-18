@@ -4326,13 +4326,15 @@
     // reload - they used to silently reset to these defaults on every page
     // refresh because only the setters ever touched chrome.storage.
     let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false;
+    let diagDebug = "off"; // "off" | "basic" | "detailed" | "trace"
+    try { window.__rsDiagDebug = () => diagDebug; } catch {}
     let workMode = "balanced";
     try { window.__rsWorkMode = () => workMode; } catch {}
     try { window.__rsPlanMode = () => planMode; } catch {}
     try { window.__rsAutoDebug = () => autoDebugEnabled; } catch {}
     try { window.__rsMultiAgent = () => multiAgent; } catch {}
     try {
-      chrome.storage.local.get(["rsShotFast", "rsShotMax", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent", "rsVisualRef"], (r) => {
+      chrome.storage.local.get(["rsShotFast", "rsShotMax", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent", "rsVisualRef", "rsDiagDebug"], (r) => {
     // ── Persistent Visual Reference in Settings ───────────────────────────
     // Allows user to drag-and-drop or select an image to use as an ongoing visual
     // reference for GUI or Build/Model tasks, with mathematical accuracy and
@@ -4383,6 +4385,11 @@
           } catch {}
         }
         if (typeof r.rsAutoFixStopPlay === "boolean") autoFixStopPlay = r.rsAutoFixStopPlay;
+        if (["off", "basic", "detailed", "trace"].includes(r.rsDiagDebug)) {
+          diagDebug = r.rsDiagDebug;
+          try { window.__rsDiagDebug = () => diagDebug; } catch {}
+        }
+        
                 if (r.rsVisualRef && typeof r.rsVisualRef === "object") {
           visualRef = Object.assign(visualRef, r.rsVisualRef);
           try { window.__rsVisualRef = () => visualRef; } catch {}
@@ -5039,6 +5046,23 @@
             <input type="file" id="rs-ref-file-input" accept="image/*" style="display:none;" />
           </section>
 
+                    <section class="rs-menu-sec" id="rs-diag-sec">
+            <div class="rs-sec-label"><span>Diagnostic Debug System</span></div>
+            <div class="rs-menu-note">Embeds structured runtime observability directly into scripts (no separate module). Tracks earnings/losses, trajectories, state transitions, and pre-failure histories without Output spam.</div>
+            <div class="rs-diag-row">
+              <button type="button" class="rs-diag-btn ${diagDebug === "off" ? "on" : ""}" data-diag="off" title="Disabled — zero overhead, no diagnostics, silent">Off</button>
+              <button type="button" class="rs-diag-btn ${diagDebug === "basic" ? "on" : ""}" data-diag="basic" title="Basic — critical events, state transitions, failures, and transactions">Basic</button>
+              <button type="button" class="rs-diag-btn ${diagDebug === "detailed" ? "on" : ""}" data-diag="detailed" title="Detailed — adds periodic 0.5s snapshots, calculations, and bounded history">Detailed</button>
+              <button type="button" class="rs-diag-btn ${diagDebug === "trace" ? "on" : ""}" data-diag="trace" title="Trace — deep state tracking and high-frequency diagnostics for elusive bugs">Trace</button>
+            </div>
+            <div class="rs-menu-note" style="margin-top:4px;">${
+              diagDebug === "off" ? "Disabled — scripts run with standard code and no diagnostic overhead." :
+              diagDebug === "basic" ? "Basic — tracks critical transactions, state shifts, and failures directly in code." :
+              diagDebug === "detailed" ? "Detailed — includes periodic snapshots (trajectories, calculations) in bounded buffers." :
+              "Trace — maximum internal state tracking and deep failure context."
+            }</div>
+          </section>
+
           <section class="rs-menu-sec" id="rs-checkpoint-sec">
             <div class="rs-sec-label"><span>Recent Checkpoints</span></div>
             <div class="rs-menu-note">Saved before each change. Use Studio Undo (Ctrl+Z) if needed. Last 10 kept.</div>
@@ -5186,6 +5210,14 @@
           if (files && files.length) setVisualRefImage(files[0]);
         });
       }
+
+            // ── Diagnostic Debug System buttons ──
+      menuEl.querySelectorAll(".rs-diag-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const lvl = btn.getAttribute("data-diag");
+          if (lvl) setDiagDebug(lvl);
+        });
+      });
 
       const i2mBtn = menuEl.querySelector("#rs-i2m-btn");
       if (i2mBtn) i2mBtn.addEventListener("click", () => {
@@ -5800,6 +5832,15 @@ let cardsUiStyle = "modern";
       try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
       buildMenu();
       toast("Visual reference cleared");
+    }
+
+        function setDiagDebug(level) {
+      if (!["off", "basic", "detailed", "trace"].includes(level)) return;
+      diagDebug = level;
+      try { window.__rsDiagDebug = () => diagDebug; } catch {}
+      try { chrome.storage.local.set({ rsDiagDebug: level }); } catch {}
+      buildMenu();
+      toast("Diagnostic Debugging: " + level.toUpperCase());
     }
 
     function setVisualRefMode(mode) {
