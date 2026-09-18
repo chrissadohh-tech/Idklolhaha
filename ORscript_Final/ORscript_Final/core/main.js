@@ -4294,6 +4294,20 @@
     // All four persist. The loads below restore the user's choices after a
     // reload - they used to silently reset to these defaults on every page
     // refresh because only the setters ever touched chrome.storage.
+    // ── Persistent Visual Reference in Settings (Compact & Non-Intrusive) ──
+    let visualRef = {
+      active: false,
+      mode: "gui", // "gui" | "build"
+      data: "",     // base64 image data
+      mimeType: "image/jpeg",
+      preview: "",  // shrunk thumbnail dataUrl
+      name: "",
+      notes: "",
+      width: 0,
+      height: 0
+    };
+    try { window.__rsVisualRef = () => visualRef; } catch {}
+
     let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false;
     let diagDebug = "off"; // "off" | "basic" | "detailed" | "trace"
     try { window.__rsDiagDebug = () => diagDebug; } catch {}
@@ -4311,6 +4325,10 @@
           if (Number.isFinite(m)) shotFast = m > 0;
           else if (typeof r.rsShotFast === "boolean") shotFast = r.rsShotFast;
           try { buildMenu(); } catch {}
+        }
+        if (r.rsVisualRef && typeof r.rsVisualRef === "object") {
+          visualRef = Object.assign(visualRef, r.rsVisualRef);
+          try { window.__rsVisualRef = () => visualRef; } catch {}
         }
         if (typeof r.rsAutoFix === "boolean") autoFixEnabled = r.rsAutoFix;
         if (typeof r.rsExtraThinking === "boolean") {
@@ -4952,6 +4970,50 @@
             </div>
           </section>
             
+                    <section class="rs-menu-sec" id="rs-vref-sec">
+            <div class="rs-sec-label"><span>Visual Reference Target</span></div>
+            <div class="rs-menu-note">Set a reference image and target mode. The AI calculates strict mathematical proportions, UDim2 ratios, and alignments.</div>
+            
+            <div class="rs-ref-mode-row">
+              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "gui" ? "on" : ""}" id="rs-ref-mode-gui" title="Reference for GUI (HUDs, Menus, Inventory, Frames)">
+                <span>🖥️ GUI Layout</span>
+              </button>
+              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "build" ? "on" : ""}" id="rs-ref-mode-build" title="Reference for 3D Builds, Models, Props">
+                <span>🏰 Build / Model</span>
+              </button>
+            </div>
+
+            ${visualRef.active && visualRef.preview ? `
+              <div class="rs-ref-card">
+                <div class="rs-ref-card-body">
+                  <div class="rs-ref-preview-wrap">
+                    <img class="rs-ref-preview-img" src="${visualRef.preview}" alt="Reference">
+                  </div>
+                  <div class="rs-ref-card-info">
+                    <span class="rs-ref-card-title" title="${esc(visualRef.name)}">${esc(visualRef.name || "Reference Image")}</span>
+                    <span class="rs-ref-badge ${visualRef.mode === "build" ? "build" : "gui"}">${visualRef.mode === "build" ? "Build Target" : "GUI Target"}</span>
+                    <span class="rs-ref-meta">${visualRef.width && visualRef.height ? `${visualRef.width}×${visualRef.height} px • ` : ""}Mathematical Spec</span>
+                    <div class="rs-ref-actions">
+                      <button type="button" class="rs-ref-replace-btn" id="rs-ref-replace-btn">Change</button>
+                      <button type="button" class="rs-ref-remove-btn" id="rs-ref-clear-btn">Remove</button>
+                    </div>
+                  </div>
+                </div>
+                <input id="rs-ref-notes" class="rs-mcp-field" placeholder="Optional notes (e.g. ignore background, exact 400x300 canvas)" value="${esc(visualRef.notes || "")}" />
+              </div>
+            ` : `
+              <div class="rs-ref-dropzone" id="rs-ref-dropzone" tabindex="0" role="button">
+                <div class="rs-ref-dropzone-inner">
+                  <span class="rs-ref-drop-icon">🖼️</span>
+                  <div class="rs-ref-drop-text">
+                    <b>Drop reference image here</b> or <u>browse</u>
+                  </div>
+                </div>
+              </div>
+            `}
+            <input type="file" id="rs-ref-file-input" accept="image/*,.png,.jpg,.jpeg,.webp" style="display:none;" />
+          </section>
+
                     <section class="rs-menu-sec" id="rs-diag-sec">
             <div class="rs-sec-label"><span>Diagnostic Debug System</span></div>
             <div class="rs-menu-note">Embeds structured runtime observability directly into scripts (no separate module). Tracks earnings/losses, trajectories, state transitions, and pre-failure histories without Output spam.</div>
@@ -5067,7 +5129,63 @@
       if (refModeGuiBtn) refModeGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
       if (refModeBuildBtn) refModeBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
 
-      // ── Diagnostic Debug System buttons ──
+      // ── Visual Reference settings events ──
+      const refGuiBtn = menuEl.querySelector("#rs-ref-mode-gui");
+      const refBuildBtn = menuEl.querySelector("#rs-ref-mode-build");
+      if (refGuiBtn) refGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
+      if (refBuildBtn) refBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
+
+      const refFileInput = menuEl.querySelector("#rs-ref-file-input");
+      const refDropzone = menuEl.querySelector("#rs-ref-dropzone");
+      const refReplaceBtn = menuEl.querySelector("#rs-ref-replace-btn");
+      const refClearBtn = menuEl.querySelector("#rs-ref-clear-btn");
+      const refNotesInput = menuEl.querySelector("#rs-ref-notes");
+
+      if (refNotesInput) {
+        refNotesInput.addEventListener("change", () => {
+          visualRef.notes = refNotesInput.value.trim();
+          try { window.__rsVisualRef = () => visualRef; } catch {}
+          try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+        });
+      }
+
+      if (refClearBtn) {
+        refClearBtn.addEventListener("click", () => clearVisualRef());
+      }
+
+      if (refReplaceBtn && refFileInput) {
+        refReplaceBtn.addEventListener("click", () => refFileInput.click());
+      }
+
+      if (refDropzone && refFileInput) {
+        refDropzone.addEventListener("click", () => refFileInput.click());
+        refDropzone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.add("dragover");
+        });
+        refDropzone.addEventListener("dragleave", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.remove("dragover");
+        });
+        refDropzone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.remove("dragover");
+          const files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files.length) setVisualRefImage(files[0]);
+        });
+      }
+
+      if (refFileInput) {
+        refFileInput.addEventListener("change", (e) => {
+          const files = e.target.files;
+          if (files && files.length) setVisualRefImage(files[0]);
+        });
+      }
+
+            // ── Diagnostic Debug System buttons ──
       menuEl.querySelectorAll(".rs-diag-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const lvl = btn.getAttribute("data-diag");
@@ -5622,7 +5740,84 @@ let cardsUiStyle = "modern";
         ref: "STYLE BIBLE — CARTOON. Palette: sky 120,200,255 / orange 255,140,60 / cream 255,244,214 / line-black 20,20,20. UICorner 12. UIStroke 3–4px black (cel outline). Font=FredokaOne or GothamBlack. Flat fills, no realistic gradients. Bubbly shapes. Feels like a sticker book."
       }
     };
-        function setDiagDebug(level) {
+        function shrinkRefDataUrl(url, maxDim = 800) {
+      return new Promise((resolve) => {
+        try {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              let w = img.width, h = img.height;
+              if (w > maxDim || h > maxDim) {
+                const s = maxDim / Math.max(w, h);
+                w = Math.round(w * s); h = Math.round(h * s);
+              }
+              const c = document.createElement("canvas");
+              c.width = w; c.height = h;
+              const ctx = c.getContext("2d");
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve({
+                dataUrl: c.toDataURL("image/jpeg", 0.82),
+                width: w,
+                height: h,
+                origW: img.width,
+                origH: img.height
+              });
+            } catch (e) { resolve({ dataUrl: url, width: img.width || 0, height: img.height || 0 }); }
+          };
+          img.onerror = () => resolve({ dataUrl: url, width: 0, height: 0 });
+          img.src = url;
+        } catch (e) { resolve({ dataUrl: url, width: 0, height: 0 }); }
+      });
+    }
+
+    async function setVisualRefImage(file) {
+      if (!file) return;
+      try {
+        const rawUrl = await readUiFile(file);
+        if (!rawUrl) return;
+        const shrunk = await shrinkRefDataUrl(rawUrl, 800);
+        const m = String(shrunk.dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) return;
+        visualRef.active = true;
+        visualRef.mimeType = m[1];
+        visualRef.data = m[2];
+        visualRef.preview = shrunk.dataUrl;
+        visualRef.name = file.name || "Reference Image";
+        visualRef.width = shrunk.width;
+        visualRef.height = shrunk.height;
+        try { window.__rsVisualRef = () => visualRef; } catch {}
+        try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+        buildMenu();
+        toast("Visual reference saved: " + (visualRef.mode === "build" ? "Build / 3D Model" : "GUI"));
+      } catch (e) {
+        toast("Failed to load reference image");
+      }
+    }
+
+    function clearVisualRef() {
+      visualRef.active = false;
+      visualRef.data = "";
+      visualRef.preview = "";
+      visualRef.name = "";
+      visualRef.notes = "";
+      visualRef.width = 0;
+      visualRef.height = 0;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Visual reference cleared");
+    }
+
+    function setVisualRefMode(mode) {
+      if (mode !== "gui" && mode !== "build") return;
+      visualRef.mode = mode;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Reference target set to " + (mode === "build" ? "Build / 3D Model" : "GUI"));
+    }
+
+    function setDiagDebug(level) {
       if (!["off", "basic", "detailed", "trace"].includes(level)) return;
       diagDebug = level;
       try { window.__rsDiagDebug = () => diagDebug; } catch {}

@@ -5291,3 +5291,74 @@ html.rs-light #rs-cards-rng:hover {
   border-color: #f59e0b !important;
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.25) !important;
 }
+
+
+/* ── Compact Visual Reference Target in Settings ── */
+#rs-vref-sec { margin-bottom: 12px; }
+.rs-ref-mode-row {
+  display: flex; gap: 6px; margin: 8px 0;
+}
+.rs-ref-mode-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 10px; font-size: 11px; font-weight: 600; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #a0a0b0; cursor: pointer; transition: all 0.15s ease;
+}
+.rs-ref-mode-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.rs-ref-mode-btn.on {
+  background: rgba(129, 140, 248, 0.16); border-color: rgba(129, 140, 248, 0.4);
+  color: #c7d2fe; box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+.rs-ref-dropzone {
+  display: flex; align-items: center; justify-content: center;
+  border: 1px dashed rgba(255, 255, 255, 0.18); border-radius: 10px;
+  padding: 10px 12px; background: rgba(0, 0, 0, 0.15); cursor: pointer;
+  transition: all 0.18s ease; min-height: 44px;
+}
+.rs-ref-dropzone:hover, .rs-ref-dropzone.dragover {
+  border-color: #818cf8; background: rgba(99, 102, 241, 0.08);
+}
+.rs-ref-dropzone-inner {
+  display: flex; align-items: center; gap: 8px;
+}
+.rs-ref-drop-icon { font-size: 16px; }
+.rs-ref-drop-text { font-size: 11px; color: #a1a1aa; }
+.rs-ref-drop-text b { color: #e4e4e7; font-weight: 600; }
+.rs-ref-drop-text u { color: #818cf8; text-decoration: none; border-bottom: 1px dotted #818cf8; }
+
+.rs-ref-card {
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px; padding: 8px 10px; margin-top: 6px;
+}
+.rs-ref-card-body {
+  display: flex; align-items: center; gap: 10px;
+}
+.rs-ref-preview-wrap {
+  width: 42px; height: 42px; border-radius: 6px; overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12); flex-shrink: 0; background: #000;
+}
+.rs-ref-preview-img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.rs-ref-card-info {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+}
+.rs-ref-card-title {
+  font-size: 11.5px; font-weight: 600; color: #f4f4f5; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.rs-ref-badge {
+  display: inline-block; width: fit-content; font-size: 9.5px; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px;
+}
+.rs-ref-badge.gui { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+.rs-ref-badge.build { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.rs-ref-meta { font-size: 10px; color: #71717a; }
+.rs-ref-actions { display: flex; gap: 6px; margin-top: 3px; }
+.rs-ref-replace-btn, .rs-ref-remove-btn {
+  background: none; border: none; padding: 0; font-size: 10.5px; cursor: pointer;
+}
+.rs-ref-replace-btn { color: #818cf8; }
+.rs-ref-replace-btn:hover { text-decoration: underline; }
+.rs-ref-remove-btn { color: #ef4444; }
+.rs-ref-remove-btn:hover { text-decoration: underline; }

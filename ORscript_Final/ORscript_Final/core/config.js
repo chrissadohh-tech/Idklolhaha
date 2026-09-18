@@ -390,7 +390,32 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
       } catch {}
       if (isExtra || isForge) modeExtra += `\n(Auto-fix is watching Playtest Output — if a PLAYTEST ERROR is auto-injected, fix it immediately.)`;
     } catch {}
-    // ── Visual Reference Directive (Persistent Reference Image in Settings) ──
+    // ── Persistent Visual Reference (Text Guidance & Math Specs) ──
+    let visualRefDirective = "";
+    try {
+      const vRef = (typeof window !== "undefined" && typeof window.__rsVisualRef === "function") ? window.__rsVisualRef() : null;
+      if (vRef && vRef.active) {
+        const mode = vRef.mode === "build" ? "BUILD / 3D MODEL" : "GUI (GRAPHICAL USER INTERFACE)";
+        visualRefDirective = `\n\n━━━ PERSISTENT VISUAL REFERENCE: ${mode} ━━━\n` +
+          `A visual reference target has been designated by the user in Settings as the active standard for this ${mode}.\n` +
+          `Goal: build with MAXIMUM fidelity and MATHEMATICAL ACCURACY until the result in Studio is identical or identically close.\n\n` +
+          (vRef.mode === "build"
+            ? `BUILD REPRODUCTION RULES (MATHEMATICALLY ACCURATE):\n` +
+              `1. DECOMPOSE: Break down the target model into geometric volumes, bounding boxes, and symmetry planes.\n` +
+              `2. SCALE & PROPORTIONS: Calibrate against Roblox standards (standard humanoid height ≈ 5 studs). Calculate exact proportional ratios (width:height:depth) rather than guessing.\n` +
+              `3. MEASUREMENTS & ALIGNMENT: Calculate exact CFrame offsets, surface normals, angles (in degrees/radians), and stud dimensions.\n` +
+              `4. ITERATIVE VERIFICATION: After constructing with execute_luau / primitives / meshes, call screen_capture {} to view your current Studio build. Measure discrepancies in silhouette, proportion ratios, bevels/angles, and colors. Refine until matching.\n`
+            : `GUI REPRODUCTION RULES (STRICT MATHEMATICAL CALCULATIONS):\n` +
+              `1. CANVAS RATIO & SCREEN DECOMPOSITION: Compute exact bounding-box percentages for every element.\n` +
+              `2. EXACT UDim2 MATHEMATICS: Use strict mathematical formulas for UDim2 (Scale for proportional responsiveness, Offset for fixed padding/borders/icons). Calculate exact Scale values: PosX = ItemX / CanvasWidth, SizeX = ItemWidth / CanvasWidth.\n` +
+              `3. ALIGNMENT, SYMMETRY & PADDING: Calculate pixel-exact margins, element gaps, and padding. Utilize UIListLayout / UIGridLayout with mathematically calculated Padding UDim, or compute explicit AnchorPoint (e.g. Vector2.new(0.5, 0.5) for center alignment).\n` +
+              `4. COLOR & STYLING METRICS: Match exact UICorner CornerRadius (px), UIStroke Thickness (px) & Color, UIGradient Rotation & Keypoints, and Font face/weights.\n` +
+              `5. ITERATIVE SCREENSHOT REFINEMENT: After creating or updating the GUI via execute_luau, immediately take a screen_capture {} of the Studio viewport to verify layout and color metrics. Refine until mathematically and visually identical.\n`
+          ) +
+          (vRef.notes ? `User Reference Notes: ${vRef.notes}\n` : "");
+      }
+    } catch (eRef) {}
+
     const siteRules = providerNotes.trim()
       ? `\n\n━━━ ADDITIONAL RULES FOR THIS SITE ━━━\n${providerNotes.trim()}`
       : "";
@@ -402,10 +427,10 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
       : "";
 
     // The marker leads the prompt; it tags the bootstrap turn for camouflage.
-    const full = `${SYS_MARKER}\n${prompt}${modeExtra}${personaExtra}${siteRules}${extra}`;
+    const full = `${SYS_MARKER}\n${prompt}${modeExtra}${visualRefDirective}${personaExtra}${siteRules}${extra}`;
     if (maxChars && full.length > maxChars) {
       const compactCore = buildCompactPrompt({ siteName });
-      const compactFull = `${SYS_MARKER}\n${compactCore}${modeExtra}${personaExtra}${siteRules}${extra}`;
+      const compactFull = `${SYS_MARKER}\n${compactCore}${modeExtra}${visualRefDirective}${personaExtra}${siteRules}${extra}`;
       if (compactFull.length < full.length) return compactFull;
     }
     return full;
