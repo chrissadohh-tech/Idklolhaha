@@ -7151,7 +7151,7 @@ function renderCards(panel) {
           }
         } catch {}
         try {
-          const ed = (P.getEditor && P.getEditor()) || (P.composerFrame && P.composerFrame()) || document.querySelector("textarea, [contenteditable="true"]");
+          const ed = (P.getEditor && P.getEditor()) || (P.composerFrame && P.composerFrame()) || document.querySelector("textarea, [contenteditable='true']");
           if (!ed || !ed.isConnected) return null;
           // Walk upward to find the prompt box / composer surface container
           let cur = ed.parentElement;
