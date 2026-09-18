@@ -7189,47 +7189,48 @@ function renderCards(panel) {
 
       const anchorEl = resolveAnchor();
       if (anchorEl && anchorEl.isConnected) {
-        bar.classList.remove("rs-bar-inline", "rs-bar-inside", "rs-bar-float");
-        bar.classList.add("rs-bar-anchored");
-        if (root && bar.parentElement !== root) root.appendChild(bar);
         let r = anchorEl.getBoundingClientRect();
-        if (!r.width || !r.height) { bar.style.display = "none"; clearAnchorPad(); if (menuEl) menuEl.hidden = true; return; }
-        bar.style.display = "flex";
-        const bh = bar.offsetHeight || 34;
-        if (anchorPadEl && anchorPadEl !== anchorEl) clearAnchorPad();
-        anchorPadEl = anchorEl;
-        // Reserve the strip INSIDE the card so the bar reads as part of the chatbox
-        // and widen the card itself so the bar's pill row fits without overlapping
-        // the rounded sides (user request: "make the chatbox itself the sides larger").
-        anchorEl.style.paddingTop = (bh + 4) + "px";
-        try {
-          // Only widen if the card is narrower than needed for the bar (≈640px).
-          // 900px gives comfortable side breathing room on Gemini and other
-          // anchored composers without breaking centered layout.
-          const curMax = parseInt(getComputedStyle(anchorEl).maxWidth) || 0;
-          if (!anchorEl.dataset.rsOrigMax) anchorEl.dataset.rsOrigMax = anchorEl.style.maxWidth || "";
-          if (r.width < 800) {
-            anchorEl.style.maxWidth = "900px";
-            anchorEl.style.width = "100%";
-            anchorEl.style.marginLeft = "auto";
-            anchorEl.style.marginRight = "auto";
-            // Re-measure after widening so the bar hugs the new wider card
-            r = anchorEl.getBoundingClientRect();
-          } else if (curMax && curMax < 820) {
-            anchorEl.style.maxWidth = "900px";
+        if (r.width > 20 && r.height > 10) {
+          bar.classList.remove("rs-bar-inline", "rs-bar-inside", "rs-bar-float");
+          bar.classList.add("rs-bar-anchored");
+          if (root && bar.parentElement !== root) root.appendChild(bar);
+          bar.style.display = "flex";
+          const bh = bar.offsetHeight || 34;
+          if (anchorPadEl && anchorPadEl !== anchorEl) clearAnchorPad();
+          anchorPadEl = anchorEl;
+          // Reserve the strip INSIDE the card so the bar reads as part of the chatbox
+          // and widen the card itself so the bar's pill row fits without overlapping
+          // the rounded sides (user request: "make the chatbox itself the sides larger").
+          anchorEl.style.paddingTop = (bh + 4) + "px";
+          try {
+            // Only widen if the card is narrower than needed for the bar (≈640px).
+            // 900px gives comfortable side breathing room on Gemini and other
+            // anchored composers without breaking centered layout.
+            const curMax = parseInt(getComputedStyle(anchorEl).maxWidth) || 0;
+            if (!anchorEl.dataset.rsOrigMax) anchorEl.dataset.rsOrigMax = anchorEl.style.maxWidth || "";
+            if (r.width < 800) {
+              anchorEl.style.maxWidth = "900px";
+              anchorEl.style.width = "100%";
+              anchorEl.style.marginLeft = "auto";
+              anchorEl.style.marginRight = "auto";
+              // Re-measure after widening so the bar hugs the new wider card
+              r = anchorEl.getBoundingClientRect();
+            } else if (curMax && curMax < 820) {
+              anchorEl.style.maxWidth = "900px";
+            }
+          } catch {}
+          bar.style.left = Math.round(r.left) + "px";
+          bar.style.top = Math.round(r.top) + "px";
+          bar.style.width = Math.round(r.width) + "px";
+          bar.style.borderRadius = "";
+          if (menuEl && !menuEl.hidden) {
+            bar.classList.remove("rs-bar-inline"); // ensure fixed geometry for menu math
+            menuEl.style.right = Math.round(window.innerWidth - (r.left + r.width)) + "px";
+            menuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
+            menuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
           }
-        } catch {}
-        bar.style.left = Math.round(r.left) + "px";
-        bar.style.top = Math.round(r.top) + "px";
-        bar.style.width = Math.round(r.width) + "px";
-        bar.style.borderRadius = "";
-        if (menuEl && !menuEl.hidden) {
-          bar.classList.remove("rs-bar-inline"); // ensure fixed geometry for menu math
-          menuEl.style.right = Math.round(window.innerWidth - (r.left + r.width)) + "px";
-          menuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
-          menuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
+          return;
         }
-        return;
       }
       bar.classList.remove("rs-bar-anchored");
       clearAnchorPad();
