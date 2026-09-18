@@ -326,5 +326,26 @@ ok("System prompt includes universal mathematical and logical reasoning rule in 
   cfgJS.includes("Derive equations from first principles") &&
   cfgJS.includes("Calculate rather than approximate"));
 
+// ── Universal Strict Typing, Server Authority, Leak Prevention & Mobile Rules ──
+ok("System prompt enforces strict type-checking (--!strict) on all scripts",
+  cfgJS.includes("ALWAYS USE STRICT TYPE-CHECKING (--!strict)") &&
+  cfgJS.includes("STRICT TYPING (--!strict)"));
+
+ok("System prompt enforces server-authority and anti-exploit validation on remotes",
+  cfgJS.includes("SERVER-AUTHORITY & ANTI-EXPLOIT VALIDATION") &&
+  cfgJS.includes("NEVER trust client input on RemoteEvents") &&
+  cfgJS.includes("SERVER AUTHORITY: never trust client remotes"));
+
+ok("System prompt enforces memory leak prevention and connection cleanup",
+  cfgJS.includes("MEMORY LEAK PREVENTION & LIFECYCLE MANAGEMENT") &&
+  cfgJS.includes("Heartbeat") && cfgJS.includes("RenderStepped") &&
+  cfgJS.includes("CLEANUP & LEAK PREVENTION: disconnect all events"));
+
+ok("System prompt enforces universal mobile and cross-platform support",
+  cfgJS.includes("UNIVERSAL MOBILE & CROSS-PLATFORM SUPPORT") &&
+  cfgJS.includes("UIAspectRatioConstraint") &&
+  cfgJS.includes("ContextActionService:BindAction") &&
+  cfgJS.includes("MOBILE & CROSS-PLATFORM: all UI and controls must work on mobile"));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
