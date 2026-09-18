@@ -41,10 +41,10 @@ const RSProvider = (() => {
     assistantItem: ".qwen-chat-message-assistant",
     anyItem: ".qwen-chat-message",
     reply: ".response-message-content",
-    editor: "textarea.message-input-textarea",
-    composer: ".message-input-wrapper",
-    sendBtn: "button.send-button",
-    stopBtn: "button.stop-button",
+    editor: "textarea.message-input-textarea, textarea, [contenteditable='true']",
+    composer: ".message-input-wrapper, .chat-message-input-fixed-container, [class*='message-input'], [class*='chat-input']",
+    sendBtn: "button.send-button, button[aria-label*='Send' i], button.ant-btn-primary",
+    stopBtn: "button.stop-button, button[aria-label*='Stop' i]",
     codeWrap: "pre.qwen-markdown-code",
     errorSurfaces: '[role="alert"],[class*="toast"],[class*="error"],[class*="alert"],[class*="notification"],[class*="ant-message"],[class*="message-notice"]',
   };
@@ -307,7 +307,10 @@ const RSProvider = (() => {
   // null and the send-hook guards stay intact.
   const getEditor = () => {
     for (const e of document.querySelectorAll(S.editor)) {
-      if (!e.closest("#rs-root")) return e;
+      if (!e.closest("#rs-root") && e.offsetParent !== null) return e;
+    }
+    for (const e of document.querySelectorAll("textarea, [contenteditable='true']")) {
+      if (!e.closest("#rs-root") && e.offsetParent !== null) return e;
     }
     return null;
   };
@@ -392,9 +395,13 @@ const RSProvider = (() => {
   // element the core's anchored branch hugs.
   function barAnchor() {
     const ed = getEditor();
+    if (!ed) return document.querySelector(S.composer) || null;
     return (
-      (ed && ed.closest(".chat-message-input-fixed-container")) ||
-      (ed && ed.closest(S.composer)) ||
+      ed.closest(".chat-message-input-fixed-container") ||
+      ed.closest(".message-input-wrapper") ||
+      ed.closest(S.composer) ||
+      ed.closest("form") ||
+      ed.parentElement ||
       null
     );
   }

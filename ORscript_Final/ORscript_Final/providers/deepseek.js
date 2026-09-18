@@ -304,20 +304,27 @@ const RSProvider = (() => {
   // DeepSeek's React reconciles the input card; inserting #rs-bar inside it
   // risks a diff reuse. Use anchored mode — bar hugs the composer's top
   // edge from outside the DOM tree.
-  // DeepSeek is React-managed: any node we insert into the composer subtree
-  // gets fought over on every re-render (flicker/overlap). So use ANCHORED
-  // mode — the bar lives in our own #rs-root (position:fixed) and hugs the
-  // rounded chatbox's top edge from outside the DOM tree. React never sees it.
-  function barAnchor() {
+  // Where the core inserts its in-flow status bar. The INPUT BOX = the lowest
+  // ancestor of the textarea that also holds the send button.
+  // It is a flex column whose second child is the buttons row (send, web, DeepThink),
+  // so adding the bar as its FIRST child reflows cleanly and spans the full input width.
+  function barMount() {
     const ta = getEditor();
     if (!ta) return null;
-    for (let n = ta.parentElement, i = 0; n && n !== document.body && i < 8; i++, n = n.parentElement) {
-      try {
-        const r = parseFloat(getComputedStyle(n).borderTopLeftRadius) || 0;
-        if (r >= 12) return n;
-      } catch {}
+    const send = document.querySelector(S.sendBtn);
+    let box = ta.parentElement;
+    while (box && box !== document.body) {
+      const holdsSend = !send || box.contains(send);
+      if (holdsSend) break;
+      box = box.parentElement;
     }
-    return ta.closest("form") || ta.parentElement;
+    if (!box || box === document.body) box = ta.parentElement;
+    if (!box) return null;
+    // Insert before the first REAL child (skip our own bar if already mounted,
+    // otherwise we'd try to insert the bar before itself every frame).
+    let before = box.firstElementChild;
+    if (before && before.id === "rs-bar") before = before.nextElementSibling;
+    return { parent: box, before, inside: true }; // lives INSIDE the input box
   }
 
   // ── Composer toggles: search OFF, legacy DeepThink ON ────────────────────
@@ -947,7 +954,7 @@ const RSProvider = (() => {
     assistantCount, userCount, lastAssistant, lastAssistantId, itemKey, readAssistant,
     streamLen, snapshot,
     // composer / state
-    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barAnchor,
+    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount,
     setInputLock, typeAndSend, stopGeneration,
     isGenerating, isBusyNow, isHardGenerating, genDebug,
     enforceComposer, ensureComposerReady,
