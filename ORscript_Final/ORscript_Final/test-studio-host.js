@@ -319,5 +319,12 @@ ok("Overlay CSS styles Diagnostic Debugging level buttons with active indicators
   css.includes('.rs-diag-btn[data-diag="off"].on') &&
   css.includes('.rs-diag-btn[data-diag="trace"].on'));
 
+// ── Universal Mathematical Reasoning Rule ────────────────────────────────
+ok("System prompt includes universal mathematical and logical reasoning rule in RULES section",
+  cfgJS.includes("MATHEMATICAL & LOGICAL REASONING (PRIMARY TOOL)") &&
+  cfgJS.includes("prioritize equations, formulas, analytical geometry, physics") &&
+  cfgJS.includes("Derive equations from first principles") &&
+  cfgJS.includes("Calculate rather than approximate"));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
