@@ -208,7 +208,7 @@ const RSProvider = (() => {
   // `.chat-editor` (holds the text box then the toolbar row).
   function barAnchor() {
     const ed = getEditor();
-    return (ed && ed.closest(".chat-editor")) || null;
+    return (ed && (ed.closest(".chat-editor") || ed.closest(".chat-input") || ed.closest("[class*='editor-container']"))) || null;
   }
 
   // ── Chip anchor ───────────────────────────────────────────────────────────

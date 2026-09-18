@@ -284,7 +284,7 @@ const RSProvider = (() => {
   function barAnchor() {
     const ed = getEditor();
     if (!ed) return null;
-    return ed.closest("[class*='composer-surface']") || ed.closest("form") || ed.parentElement;
+    return ed.closest("[class*='composer-surface']") || ed.closest("[class*='composer']") || ed.closest("form") || ed.closest("fieldset") || ed.parentElement;
   }
 
   // ── Input lock ────────────────────────────────────────────────────────────

@@ -314,10 +314,10 @@ const RSProvider = (() => {
     for (let n = ta.parentElement, i = 0; n && n !== document.body && i < 8; i++, n = n.parentElement) {
       try {
         const r = parseFloat(getComputedStyle(n).borderTopLeftRadius) || 0;
-        if (r >= 12) return n;
+        if (r >= 8) return n;
       } catch {}
     }
-    return ta.closest("form") || ta.parentElement;
+    return ta.closest("[class*='input-box']") || ta.closest("[class*='chat-input']") || ta.closest("form") || ta.parentElement;
   }
 
   // ── Composer toggles: search OFF, legacy DeepThink ON ────────────────────

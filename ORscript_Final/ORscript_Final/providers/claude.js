@@ -282,7 +282,7 @@ const RSProvider = (() => {
   function barAnchor() {
     const ed = getEditor();
     if (!ed) return null;
-    return ed.closest("fieldset") || ed.closest("[class*='composer']") || ed.closest("form") || ed.parentElement;
+    return ed.closest("fieldset") || ed.closest("[class*='composer']") || ed.closest("[class*='ProseMirror']")?.parentElement || ed.closest("form") || ed.parentElement;
   }
 
   let _locked = false;

@@ -395,6 +395,8 @@ const RSProvider = (() => {
     return (
       (ed && ed.closest(".chat-message-input-fixed-container")) ||
       (ed && ed.closest(S.composer)) ||
+      (ed && ed.closest(".message-input-container")) ||
+      (ed && ed.closest(".message-input-wrapper")) ||
       null
     );
   }
