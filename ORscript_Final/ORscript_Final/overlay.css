@@ -145,17 +145,16 @@ html.rs-light #rs-bar.rs-bar-inline.rs-bar-inside {
    padding on the composer so it reads as in-flow. Transparent like the
    .rs-bar-inside look, so it blends into the composer surface. */
 #rs-bar.rs-bar-anchored {
-  background: linear-gradient(180deg, rgba(255,244,230,0.07), rgba(12,10,8,0.5)) !important;
-  border: 1px solid rgba(255,232,204,0.12) !important;
-  border-bottom: 1px solid rgba(255, 232, 204, 0.18) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 8px 22px rgba(0,0,0,0.2) !important;
-  backdrop-filter: blur(12px) saturate(1.2) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(1.2) !important;
+  background: linear-gradient(180deg, rgba(255,244,230,0.07), rgba(12,10,8,0.5));
+  border: 1px solid rgba(255,232,204,0.12);
+  border-bottom: 1px solid rgba(255, 232, 204, 0.18);
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.2);
+  backdrop-filter: blur(12px) saturate(1.2);
   /* A touch of vertical room so the bar doesn't feel cramped against the input
      (matches the roomier DeepSeek inline look). The reserved strip in placeBar
      (bar height + gap) tracks this automatically. */
-  padding: 12px 16px !important;
+  padding: 12px 16px;
 }
 html.rs-light #rs-bar.rs-bar-anchored {
   background: transparent;

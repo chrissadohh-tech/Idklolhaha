@@ -7138,107 +7138,49 @@ function renderCards(panel) {
       // so keep the bar in #rs-root and hug the anchor's top edge from outside.
       // Clear any inline widening from a previous mount before anchoring.
       if (inlineWidenEl) { try { inlineWidenEl.style.maxWidth = ""; inlineWidenEl.style.width = ""; } catch {} inlineWidenEl = null; }
-      // Universal Prompt-Surrounding Bar Anchor:
-      // Tightly crown/frame the AI chatbox/composer on all providers.
-      // If provider barAnchor() is absent or returns an invalid/detached/zero-width node,
-      // dynamically resolve the true chat prompt container by inspecting the editor and its ancestor cards.
-      // Universal Prompt-Surrounding Bar Anchor:
-      // Tightly crown/frame the AI chatbox/composer on all providers.
-      // Resolves the chat prompt container by inspecting provider barAnchor, getEditor, and DOM cards.
-      function resolveAnchor() {
-        // 1. Try provider'''s custom anchor first
-        try {
-          let a = (P.barAnchor && P.barAnchor()) || null;
-          if (a && a.isConnected) {
-            const rect = a.getBoundingClientRect();
-            // Must have real width, height, and not be collapsed to top of page (y > 40)
-            if (rect.width > 50 && rect.height > 15 && rect.bottom > 80) return a;
-          }
-        } catch {}
-
-        // 2. Find the active editor / textarea
-        try {
-          const ed = (P.getEditor && P.getEditor()) || 
-                     (P.composerFrame && P.composerFrame()) || 
-                     document.querySelector("textarea, [contenteditable='true']");
-          if (!ed || !ed.isConnected) return null;
-
-          const er = ed.getBoundingClientRect();
-          if (er.width <= 0 || er.bottom <= 60) return null;
-
-          // Climb upwards from the editor to find the composer card / prompt frame
-          let cur = ed.parentElement;
-          let best = null;
-          for (let i = 0; cur && cur !== document.body && i < 10; i++, cur = cur.parentElement) {
-            try {
-              const rect = cur.getBoundingClientRect();
-              if (rect.width < 100 || rect.height < 24) continue;
-              // Guard: Do not select giant page wrappers
-              if (rect.height > window.innerHeight * 0.75 || rect.width > window.innerWidth * 0.98) break;
-
-              const cs = getComputedStyle(cur);
-              const tag = cur.tagName.toLowerCase();
-              const isForm = tag === "form" || tag === "fieldset";
-              const hasBorder = cs.borderWidth && parseFloat(cs.borderWidth) > 0 && cs.borderStyle !== "none";
-              const hasRadius = (parseFloat(cs.borderTopLeftRadius) || 0) >= 8;
-              const hasShadow = cs.boxShadow && cs.boxShadow !== "none";
-              const isComposerCls = cur.className && typeof cur.className === "string" && 
-                /(composer|prompt|chat-input|input-box|chat-editor|message-input)/i.test(cur.className);
-
-              if (isForm || isComposerCls || (hasRadius && (hasBorder || hasShadow))) {
-                best = cur;
-                // If this is a well-sized card, return it immediately
-                if (rect.height <= 350) return cur;
-              }
-            } catch {}
-          }
-          if (best) return best;
-          const frame = P.composerFrame && P.composerFrame();
-          if (frame && frame.isConnected) return frame;
-          return ed.closest("form") || ed.parentElement || null;
-        } catch {}
-        return null;
-      }
-
-      const anchorEl = resolveAnchor();
+      const anchorEl = (P.barAnchor && P.barAnchor()) || null;
       if (anchorEl && anchorEl.isConnected) {
+        bar.classList.remove("rs-bar-inline", "rs-bar-inside", "rs-bar-float");
+        bar.classList.add("rs-bar-anchored");
+        if (root && bar.parentElement !== root) root.appendChild(bar);
         let r = anchorEl.getBoundingClientRect();
-        // Ensure anchor is on-screen and positioned near the bottom/composer area
-        if (r.width > 80 && r.height > 15 && r.bottom > 80) {
-          bar.classList.remove("rs-bar-inline", "rs-bar-inside", "rs-bar-float");
-          bar.classList.add("rs-bar-anchored");
-          if (root && bar.parentElement !== root) root.appendChild(bar);
-          bar.style.display = "flex";
-          const bh = bar.offsetHeight || 34;
-          if (anchorPadEl && anchorPadEl !== anchorEl) clearAnchorPad();
-          anchorPadEl = anchorEl;
-          // Reserve the strip INSIDE the card so the bar crowns and reads as part of the chatbox
-          anchorEl.style.paddingTop = (bh + 4) + "px";
-          try {
-            const curMax = parseInt(getComputedStyle(anchorEl).maxWidth) || 0;
-            if (!anchorEl.dataset.rsOrigMax) anchorEl.dataset.rsOrigMax = anchorEl.style.maxWidth || "";
-            if (r.width < 800) {
-              anchorEl.style.maxWidth = "900px";
-              anchorEl.style.width = "100%";
-              anchorEl.style.marginLeft = "auto";
-              anchorEl.style.marginRight = "auto";
-              r = anchorEl.getBoundingClientRect();
-            } else if (curMax && curMax < 820) {
-              anchorEl.style.maxWidth = "900px";
-            }
-          } catch {}
-          bar.style.left = Math.round(r.left) + "px";
-          bar.style.top = Math.round(r.top) + "px";
-          bar.style.width = Math.round(r.width) + "px";
-          bar.style.borderRadius = "";
-          if (menuEl && !menuEl.hidden) {
-            bar.classList.remove("rs-bar-inline");
-            menuEl.style.right = Math.round(window.innerWidth - (r.left + r.width)) + "px";
-            menuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
-            menuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
+        if (!r.width) { bar.style.display = "none"; clearAnchorPad(); if (menuEl) menuEl.hidden = true; return; }
+        bar.style.display = "flex";
+        const bh = bar.offsetHeight || 34;
+        if (anchorPadEl && anchorPadEl !== anchorEl) clearAnchorPad();
+        anchorPadEl = anchorEl;
+        // Reserve the strip INSIDE the card so the bar reads as part of the chatbox
+        // and widen the card itself so the bar's pill row fits without overlapping
+        // the rounded sides (user request: "make the chatbox itself the sides larger").
+        anchorEl.style.paddingTop = (bh + 4) + "px";
+        try {
+          // Only widen if the card is narrower than needed for the bar (≈640px).
+          // 900px gives comfortable side breathing room on Gemini and other
+          // anchored composers without breaking centered layout.
+          const curMax = parseInt(getComputedStyle(anchorEl).maxWidth) || 0;
+          if (!anchorEl.dataset.rsOrigMax) anchorEl.dataset.rsOrigMax = anchorEl.style.maxWidth || "";
+          if (r.width < 800) {
+            anchorEl.style.maxWidth = "900px";
+            anchorEl.style.width = "100%";
+            anchorEl.style.marginLeft = "auto";
+            anchorEl.style.marginRight = "auto";
+            // Re-measure after widening so the bar hugs the new wider card
+            r = anchorEl.getBoundingClientRect();
+          } else if (curMax && curMax < 820) {
+            anchorEl.style.maxWidth = "900px";
           }
-          return;
+        } catch {}
+        bar.style.left = Math.round(r.left) + "px";
+        bar.style.top = Math.round(r.top) + "px";
+        bar.style.width = Math.round(r.width) + "px";
+        bar.style.borderRadius = "";
+        if (menuEl && !menuEl.hidden) {
+          bar.classList.remove("rs-bar-inline"); // ensure fixed geometry for menu math
+          menuEl.style.right = Math.round(window.innerWidth - (r.left + r.width)) + "px";
+          menuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
+          menuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
         }
+        return;
       }
       bar.classList.remove("rs-bar-anchored");
       clearAnchorPad();
@@ -7250,17 +7192,13 @@ function renderCards(panel) {
         bar.classList.remove("rs-bar-inline");
         if (root && bar.parentElement !== root) root.appendChild(bar);
       }
-      // If no anchor succeeded, locate the active editor or input area
-      const f = (P.getEditor && P.getEditor()) || 
-                (P.composerFrame && P.composerFrame()) || 
-                document.querySelector("textarea, [contenteditable='true']");
+      const f = (P.getEditor && P.getEditor()) || (P.composerFrame && P.composerFrame());
       bar.style.display = "flex";
       bar.classList.add("rs-bar-float");
-
-      const r = f && f.isConnected ? f.getBoundingClientRect() : null;
       // No composer yet (or 0-width during layout): keep the bar on screen so
       // the agent is never "gone". Dock it to the bottom of the viewport.
-      if (!f || !r || !r.width || r.bottom <= 40) {
+      const r = f && f.isConnected ? f.getBoundingClientRect() : null;
+      if (!f || !r || !r.width) {
         const w = Math.min(window.innerWidth - 24, BAR_MAX_W);
         const bh = bar.offsetHeight || 40;
         bar.style.width = w + "px";
@@ -7268,12 +7206,10 @@ function renderCards(panel) {
         bar.style.top = Math.max(8, Math.round(window.innerHeight - bh - 16)) + "px";
         return;
       }
-      // When floating, crown the top edge of the editor/composer card horizontally centered on it
-      const w = Math.min(Math.max(r.width, 360), BAR_MAX_W, window.innerWidth - 24);
-      const left = Math.round(Math.max(12, Math.min(window.innerWidth - w - 12, r.left + (r.width - w) / 2)));
+      const w = Math.min(r.width, BAR_MAX_W);
+      const left = Math.round(r.left + (r.width - w) / 2);
       const bh = bar.offsetHeight || 40;
-      // Hug directly above the prompt box (top - bh - 4px)
-      const top = Math.max(8, Math.round(r.top - bh - 4));
+      const top = Math.max(4, Math.round(r.top - bh - BAR_GAP));
       bar.style.width = w + "px";
       bar.style.left = left + "px";
       bar.style.top = top + "px";

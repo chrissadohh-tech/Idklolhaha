@@ -407,7 +407,7 @@ const RSProvider = (() => {
         }
       }
     }
-    return box || ta.closest("form") || ta.parentElement;
+    return box || ta.parentElement;
   }
 
   // ── Composer mode ─────────────────────────────────────────────────────

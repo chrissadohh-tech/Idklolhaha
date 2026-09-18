@@ -196,7 +196,7 @@ const RSProvider = (() => {
   // pushes the input down with no overlap.
   function barAnchor() {
     const ed = getEditor();
-    return (ed && (ed.closest('.flex-col[class*="rounded"]') || ed.closest('[class*="rounded-"]') || ed.closest("form") || ed.parentElement)) || null;
+    return (ed && ed.closest('.flex-col[class*="rounded"]')) || null;
   }
 
   // ── Input lock ────────────────────────────────────────────────────────────
