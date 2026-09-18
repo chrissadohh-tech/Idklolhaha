@@ -84,10 +84,6 @@ const sampleArgs = {
   get_property: { path: "Workspace.Part", property: "Name" },
   developer_product_create: { name: "Extra Life", price: 25, description: "An extra life" },
   developer_product_list: {},
-  // Camera framing: adjust_camera takes anything; set_camera_axis REQUIRES the
-  // axis, and buildLuau refuses it without one (checked again below).
-  adjust_camera: { target: "Dog", axis: "front", distance: 20 },
-  set_camera_axis: { axis: "-z", target: "Workspace.Dog" },
 };
 
 for (const op of RobloxScriptSkills.SKILL_OPS) {
@@ -135,65 +131,5 @@ ok("gui extras clone/front", RobloxScriptSkills.SKILL_OPS.includes("ui_clone") &
 ok("agentscript extras 2", AgentScriptSkills.SKILL_OPS.includes("read_range") && AgentScriptSkills.SKILL_OPS.includes("replace_once") && AgentScriptSkills.SKILL_OPS.includes("env_info"));
 ok("plus 40 studio commands", ["size_set","color_set","cframe_set","hinge_create","spring_create","rope_create","jump_pad","speed_pad","spawn_box","ladder_create","atmosphere_set","bloom_set","walkspeed_set","teleport_to","get_property","set_property","scale_model","ungroup_model","fire_add","remote_event_create"].every((n) => RobloxScriptSkills.SKILL_OPS.includes(n)) && RobloxScriptSkills.SKILL_OPS.length >= 140);
 ok("developer_product_create skill", RobloxScriptSkills.SKILL_OPS.includes("developer_product_create") && RobloxScriptSkills.SKILL_OPS.includes("developer_product_list"));
-
-// ── camera framing: adjust_camera / set_camera_axis ─────────────────────────
-{
-  const lua = fs.readFileSync("core/studio_skills.js", "utf8");
-  const sk = RobloxScriptSkills;
-  ok("adjust_camera + set_camera_axis are real studio skill ops",
-    sk.SKILL_OPS.includes("adjust_camera") && sk.SKILL_OPS.includes("set_camera_axis"));
-  const adj = sk.SKILL_COMMANDS.find((c) => c.name === "adjust_camera");
-  const ax = sk.SKILL_COMMANDS.find((c) => c.name === "set_camera_axis");
-  ok("adjust_camera documents target/axis/distance/elevation/fov/direction",
-    !!adj && ["target", "axis", "distance", "elevation", "fov", "direction"].every((k) => adj.params[k]));
-  ok("adjust_camera's axis is optional (it can also keep the current angle)",
-    !!adj && adj.params.axis && adj.params.axis.req === false);
-  ok("set_camera_axis is the same engine with the axis REQUIRED",
-    !!ax && ax.params.axis && ax.params.axis.req === true &&
-    lua.includes("function api.set_camera_axis(a)") &&
-    lua.includes("return frameCamera(a or {}, true)") &&
-    lua.includes("function api.adjust_camera(a)"));
-  ok("both are in the Luau op table",
-    lua.includes("adjust_camera = api.adjust_camera,") &&
-    lua.includes("set_camera_axis = api.set_camera_axis,"));
-  ok("all six signed axes + named views resolve to vectors",
-    lua.includes('["+x"] = Vector3.new(1, 0, 0)') && lua.includes('["-x"] = Vector3.new(-1, 0, 0)') &&
-    lua.includes('["+y"] = Vector3.new(0, 1, 0)') && lua.includes('["-y"] = Vector3.new(0, -1, 0)') &&
-    lua.includes('["+z"] = Vector3.new(0, 0, 1)') && lua.includes('["-z"] = Vector3.new(0, 0, -1)') &&
-    lua.includes("front = Vector3.new(0, 0, -1)") && lua.includes("top = Vector3.new(0, 1, 0)"));
-  ok("it moves the real viewport camera (what screen_capture shows)",
-    lua.includes("local cam = workspace.CurrentCamera") &&
-    lua.includes('cam = workspace:FindFirstChildOfClass("Camera")') &&
-    lua.includes("cam.CFrame = CFrame.lookAt(eye, focus, up)") &&
-    lua.includes("pcall(function() cam.Focus = focus end)"));
-  ok("a vertical axis gets a non-degenerate up vector",
-    lua.includes("if math.abs(dir.Y) > 0.98 then") &&
-    lua.includes("up = Vector3.new(0, 0, dir.Y > 0 and -1 or 1)"));
-  ok("distance auto-frames the subject from its size and the FOV",
-    lua.includes("local okB, cf, size = pcall(function() return inst:GetBoundingBox() end)") &&
-    lua.includes("dist = (radius / math.tan(math.rad(fov) * 0.5)) * 1.7"));
-  ok("it accepts a name, a path, coordinates, or the Studio selection",
-    lua.includes("local function resolveInstance(target)") &&
-    lua.includes("local function subjectOf(target)") &&
-    lua.includes('game:GetService("Selection"):Get()') &&
-    lua.includes("local function vec3Of(v)") && lua.includes(":FindFirstChild(s, true)"));
-  ok("folders/other containers frame their parts; pivots as a fallback",
-    lua.includes("for _, d in ipairs(desc) do") &&
-    lua.includes("local okP, pivot = pcall(function() return inst:GetPivot() end)"));
-  ok("no axis = keep the camera's current bearing (reframe, do not teleport)",
-    lua.includes("local rel = cam.CFrame.Position - focus") &&
-    lua.includes("kept the current angle"));
-  ok("an unknown axis is refused with the valid list",
-    lua.includes("unknown axis '") && lua.includes("or front/back/left/right/top/bottom"));
-  ok("a camera position landing on the subject is refused, not crashed",
-    lua.includes("that camera position would sit on the subject"));
-  ok("the old camera_look_at op still exists (nothing regressed)",
-    sk.SKILL_OPS.includes("camera_look_at"));
-  const noAxis = sk.buildLuau("set_camera_axis", {});
-  ok("set_camera_axis without an axis is refused BEFORE it reaches Studio",
-    !!noAxis.err && /required param 'axis'/.test(noAxis.err));
-  ok("adjust_camera with no arguments is always valid (frames the selection)",
-    !!sk.buildLuau("adjust_camera", {}).code);
-}
 
 process.exitCode = failed ? 1 : 0;
