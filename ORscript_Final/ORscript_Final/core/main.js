@@ -2370,7 +2370,18 @@
         const caption = r.text && r.text.trim()
           ? r.text.trim()
           : `${r.images.length} image(s) captured.`;
-        return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
+        let refComparisonNote = "";
+        try {
+          if (visualRef && visualRef.active && (visualRef.data || visualRef.preview)) {
+            const targetType = visualRef.mode === "build" ? "Build / 3D Model" : "GUI";
+            refComparisonNote = `\n\n[VISUAL REFERENCE VERIFICATION LOOP — ${targetType.toUpperCase()}]\n` +
+              `Now perform a strict side-by-side mathematical comparison of this Studio screenshot against the active Reference Image:\n` +
+              `1. CALCULATE DISCREPANCIES: Identify specific mismatches in proportions, dimensions, positioning, padding, alignment, hierarchy, and colors.\n` +
+              `2. RECOGNIZE ACCURACY: If elements are missing or mathematically misaligned, calculate the exact UDim2 coordinates or stud offsets required to correct them.\n` +
+              `3. ITERATE OR CONFIRM: Issue the next execute_luau command to adjust and correct the flaws, followed by screen_capture {} to re-verify, until the Studio creation is identical or as close to the reference as realistically possible.`;
+          }
+        } catch (eRefComp) {}
+        return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)${refComparisonNote}`;
       }
       // A capture answering "ok" with NO text and NO image is what an OLD
       // or-agent returns: Studio's screen_capture delivers the picture as an MCP
@@ -2805,8 +2816,22 @@
           // Ride the system-prompt re-statement out on this result if one is due
           // and it fits (see withSysResend - the result itself is never trimmed).
           toSend = withSysResend(toSend);
-          const images = A.pendingImages;
+                    let images = A.pendingImages;
           A.pendingImages = null;
+          // If a screen capture is being returned and an active Visual Reference is set,
+          // include the reference image side-by-side so the model can visually compare both!
+          try {
+            if (images && images.length && visualRef && visualRef.active && visualRef.data) {
+              const hasRef = images.some(im => im.isVisualRef || im.data === visualRef.data);
+              if (!hasRef) {
+                images = images.concat([{
+                  mimeType: visualRef.mimeType || "image/jpeg",
+                  data: visualRef.data,
+                  isVisualRef: true
+                }]);
+              }
+            }
+          } catch (eSideBySide) {}
           diag("images.consumed", { count: images ?  images.length : 0 });
           base = await submitAndGetBase(toSend, images);
         }
@@ -3217,7 +3242,13 @@
         return;
       }
       const prompt = systemPrompt();
-      const base = await submitAndGetBase(prompt);
+      let initImages = undefined;
+      try {
+        if (visualRef && visualRef.active && visualRef.data) {
+          initImages = [{ mimeType: visualRef.mimeType || "image/jpeg", data: visualRef.data }];
+        }
+      } catch (eInitImg) {}
+      const base = await submitAndGetBase(prompt, initImages);
       if (!alive()) return;
       // (syncSessionState pins A.startingKey to the conversation id once the chat
       // has content, and aborts this bootstrap if the user opens a new empty chat.)
@@ -4301,7 +4332,24 @@
     try { window.__rsAutoDebug = () => autoDebugEnabled; } catch {}
     try { window.__rsMultiAgent = () => multiAgent; } catch {}
     try {
-      chrome.storage.local.get(["rsShotFast", "rsShotMax", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent"], (r) => {
+      chrome.storage.local.get(["rsShotFast", "rsShotMax", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent", "rsVisualRef"], (r) => {
+    // ── Persistent Visual Reference in Settings ───────────────────────────
+    // Allows user to drag-and-drop or select an image to use as an ongoing visual
+    // reference for GUI or Build/Model tasks, with mathematical accuracy and
+    // iterative screenshot verification.
+    let visualRef = {
+      active: false,
+      mode: "gui", // "gui" | "build"
+      data: "",     // base64 image data
+      mimeType: "image/jpeg",
+      preview: "",  // data URL for <img> preview
+      name: "",
+      notes: "",
+      width: 0,
+      height: 0
+    };
+    try { window.__rsVisualRef = () => visualRef; } catch {}
+
         if (!r) return;
         // rs-shot-max is the single source of truth (0 = send originals).
         {
@@ -4335,6 +4383,11 @@
           } catch {}
         }
         if (typeof r.rsAutoFixStopPlay === "boolean") autoFixStopPlay = r.rsAutoFixStopPlay;
+                if (r.rsVisualRef && typeof r.rsVisualRef === "object") {
+          visualRef = Object.assign(visualRef, r.rsVisualRef);
+          try { window.__rsVisualRef = () => visualRef; } catch {}
+          try { buildMenu(); } catch {}
+        }
         if (["fast","balanced","thorough"].includes(r.rsWorkMode)) {
           workMode = r.rsWorkMode;
           try { window.__rsWorkMode = () => workMode; } catch {}
@@ -4945,6 +4998,47 @@
             </div>
           </section>
             
+                    <section class="rs-menu-sec" id="rs-vref-sec">
+            <div class="rs-sec-label"><span>Visual Reference</span></div>
+            <div class="rs-menu-note">Drag & drop a reference image. The AI will continuously consult it, calculate mathematical proportions/alignments, and verify Studio screenshots against it until identical.</div>
+            
+            <div class="rs-ref-mode-row">
+              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "gui" ? "on" : ""}" id="rs-ref-mode-gui" title="Reference for GUI (HUDs, Menus, Inventory, Frames)">
+                <span>🖥️ GUI Layout</span>
+              </button>
+              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "build" ? "on" : ""}" id="rs-ref-mode-build" title="Reference for 3D Builds, Models, Props">
+                <span>🏰 Build / Model</span>
+              </button>
+            </div>
+
+            ${visualRef.active && visualRef.preview ? `
+              <div class="rs-ref-card">
+                <div class="rs-ref-card-body">
+                  <div class="rs-ref-preview-wrap">
+                    <img class="rs-ref-preview-img" src="${visualRef.preview}" alt="Reference">
+                  </div>
+                  <div class="rs-ref-card-info">
+                    <span class="rs-ref-card-title" title="${esc(visualRef.name)}">${esc(visualRef.name || "Reference Image")}</span>
+                    <span class="rs-ref-badge ${visualRef.mode === "build" ? "build" : "gui"}">${visualRef.mode === "build" ? "Build Target" : "GUI Target"}</span>
+                    <span class="rs-ref-meta">${visualRef.width && visualRef.height ? `${visualRef.width}×${visualRef.height} px • ` : ""}Mathematical Spec</span>
+                    <div class="rs-ref-actions">
+                      <button type="button" class="rs-ref-replace-btn" id="rs-ref-replace-btn">Change</button>
+                      <button type="button" class="rs-ref-remove-btn" id="rs-ref-clear-btn">Remove</button>
+                    </div>
+                  </div>
+                </div>
+                <input id="rs-ref-notes" class="rs-mcp-field" placeholder="Optional notes (e.g. ignore background, exact 400x300 canvas)" value="${esc(visualRef.notes || "")}" />
+              </div>
+            ` : `
+              <div class="rs-ref-dropzone" id="rs-ref-dropzone" tabindex="0" role="button">
+                <span class="rs-ref-drop-icon">🖼️</span>
+                <span class="rs-ref-drop-text">Drop reference image here</span>
+                <span class="rs-ref-drop-hint">or click to browse (PNG, JPG, WebP)</span>
+              </div>
+            `}
+            <input type="file" id="rs-ref-file-input" accept="image/*" style="display:none;" />
+          </section>
+
           <section class="rs-menu-sec" id="rs-checkpoint-sec">
             <div class="rs-sec-label"><span>Recent Checkpoints</span></div>
             <div class="rs-menu-note">Saved before each change. Use Studio Undo (Ctrl+Z) if needed. Last 10 kept.</div>
@@ -5037,6 +5131,62 @@
         });
       });
       // ── Image → Model: paste the vision builder template ──
+            // ── Visual Reference settings events ──
+      const refModeGuiBtn = menuEl.querySelector("#rs-ref-mode-gui");
+      const refModeBuildBtn = menuEl.querySelector("#rs-ref-mode-build");
+      if (refModeGuiBtn) refModeGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
+      if (refModeBuildBtn) refModeBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
+
+      const refFileInput = menuEl.querySelector("#rs-ref-file-input");
+      const refDropzone = menuEl.querySelector("#rs-ref-dropzone");
+      const refReplaceBtn = menuEl.querySelector("#rs-ref-replace-btn");
+      const refClearBtn = menuEl.querySelector("#rs-ref-clear-btn");
+      const refNotesInput = menuEl.querySelector("#rs-ref-notes");
+
+      if (refNotesInput) {
+        refNotesInput.addEventListener("change", () => {
+          visualRef.notes = refNotesInput.value.trim();
+          try { window.__rsVisualRef = () => visualRef; } catch {}
+          try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+        });
+      }
+
+      if (refClearBtn) {
+        refClearBtn.addEventListener("click", () => clearVisualRef());
+      }
+
+      if (refReplaceBtn && refFileInput) {
+        refReplaceBtn.addEventListener("click", () => refFileInput.click());
+      }
+
+      if (refDropzone && refFileInput) {
+        refDropzone.addEventListener("click", () => refFileInput.click());
+        refDropzone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.add("dragover");
+        });
+        refDropzone.addEventListener("dragleave", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.remove("dragover");
+        });
+        refDropzone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.remove("dragover");
+          const files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files.length) setVisualRefImage(files[0]);
+        });
+      }
+
+      if (refFileInput) {
+        refFileInput.addEventListener("change", (e) => {
+          const files = e.target.files;
+          if (files && files.length) setVisualRefImage(files[0]);
+        });
+      }
+
       const i2mBtn = menuEl.querySelector("#rs-i2m-btn");
       if (i2mBtn) i2mBtn.addEventListener("click", () => {
         let visionOk = false;
@@ -5584,6 +5734,83 @@ let cardsUiStyle = "modern";
         ref: "STYLE BIBLE — CARTOON. Palette: sky 120,200,255 / orange 255,140,60 / cream 255,244,214 / line-black 20,20,20. UICorner 12. UIStroke 3–4px black (cel outline). Font=FredokaOne or GothamBlack. Flat fills, no realistic gradients. Bubbly shapes. Feels like a sticker book."
       }
     };
+        function shrinkRefDataUrl(url, maxDim = 1280) {
+      return new Promise((resolve) => {
+        try {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              let w = img.width, h = img.height;
+              if (w > maxDim || h > maxDim) {
+                const s = maxDim / Math.max(w, h);
+                w = Math.round(w * s); h = Math.round(h * s);
+              }
+              const c = document.createElement("canvas");
+              c.width = w; c.height = h;
+              const ctx = c.getContext("2d");
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve({
+                dataUrl: c.toDataURL("image/jpeg", 0.88),
+                width: w,
+                height: h,
+                origW: img.width,
+                origH: img.height
+              });
+            } catch (e) { resolve({ dataUrl: url, width: img.width || 0, height: img.height || 0 }); }
+          };
+          img.onerror = () => resolve({ dataUrl: url, width: 0, height: 0 });
+          img.src = url;
+        } catch (e) { resolve({ dataUrl: url, width: 0, height: 0 }); }
+      });
+    }
+
+    async function setVisualRefImage(file) {
+      if (!file) return;
+      try {
+        const rawUrl = await readUiFile(file);
+        if (!rawUrl) return;
+        const shrunk = await shrinkRefDataUrl(rawUrl, 1280);
+        const m = String(shrunk.dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) return;
+        visualRef.active = true;
+        visualRef.mimeType = m[1];
+        visualRef.data = m[2];
+        visualRef.preview = shrunk.dataUrl;
+        visualRef.name = file.name || "Reference Image";
+        visualRef.width = shrunk.width;
+        visualRef.height = shrunk.height;
+        try { window.__rsVisualRef = () => visualRef; } catch {}
+        try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+        buildMenu();
+        toast("Visual reference saved: " + (visualRef.mode === "build" ? "Build / 3D Model" : "GUI"));
+      } catch (e) {
+        toast("Failed to load reference image");
+      }
+    }
+
+    function clearVisualRef() {
+      visualRef.active = false;
+      visualRef.data = "";
+      visualRef.preview = "";
+      visualRef.name = "";
+      visualRef.notes = "";
+      visualRef.width = 0;
+      visualRef.height = 0;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Visual reference cleared");
+    }
+
+    function setVisualRefMode(mode) {
+      if (mode !== "gui" && mode !== "build") return;
+      visualRef.mode = mode;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Reference target set to " + (mode === "build" ? "Build / 3D Model" : "GUI"));
+    }
+
     function uiRefFromDataUrl(url, name) {
       const m = String(url || "").match(/^data:([^;]+);base64,(.+)$/);
       if (!m) return null;

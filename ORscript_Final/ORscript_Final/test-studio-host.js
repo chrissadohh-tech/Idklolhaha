@@ -264,5 +264,36 @@ ok("flipping it applies to the NEXT capture - no extension reload",
 ok("the toggle explains itself in one line",
   mainJS.includes("Resize captures over 350 KB to 1400 px before upload"));
 
+// ── Visual Reference in Settings ──────────────────────────────────────────
+const cfgJS = fs.readFileSync(path.join("core", "config.js"), "utf8");
+const css = fs.readFileSync("overlay.css", "utf8");
+
+ok("Settings has a Visual Reference dropzone and GUI/Build mode selectors",
+  mainJS.includes('id="rs-vref-sec"') &&
+  mainJS.includes('id="rs-ref-dropzone"') &&
+  mainJS.includes('id="rs-ref-mode-gui"') &&
+  mainJS.includes('id="rs-ref-mode-build"'));
+
+ok("Visual reference state is saved to and restored from chrome.storage.local",
+  mainJS.includes('chrome.storage.local.set({ rsVisualRef: visualRef })') &&
+  mainJS.includes('r.rsVisualRef && typeof r.rsVisualRef === "object"'));
+
+ok("System prompt includes persistent visual reference directive with math accuracy rules",
+  cfgJS.includes("━━━ PERSISTENT VISUAL REFERENCE:") &&
+  cfgJS.includes("GUI REPRODUCTION RULES (STRICT MATHEMATICAL CALCULATIONS)") &&
+  cfgJS.includes("BUILD REPRODUCTION RULES (MATHEMATICALLY ACCURATE)") &&
+  cfgJS.includes("EXACT UDim2 MATHEMATICS"));
+
+ok("Studio screen captures trigger side-by-side comparison loop with reference image",
+  mainJS.includes("[VISUAL REFERENCE VERIFICATION LOOP —") &&
+  mainJS.includes("CALCULATE DISCREPANCIES") &&
+  mainJS.includes("isVisualRef: true"));
+
+ok("Overlay CSS styles Visual Reference dropzone, mode buttons, badges and cards",
+  css.includes(".rs-ref-dropzone") &&
+  css.includes(".rs-ref-mode-btn") &&
+  css.includes(".rs-ref-badge.gui") &&
+  css.includes(".rs-ref-badge.build"));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
