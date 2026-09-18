@@ -7138,13 +7138,62 @@ function renderCards(panel) {
       // so keep the bar in #rs-root and hug the anchor's top edge from outside.
       // Clear any inline widening from a previous mount before anchoring.
       if (inlineWidenEl) { try { inlineWidenEl.style.maxWidth = ""; inlineWidenEl.style.width = ""; } catch {} inlineWidenEl = null; }
-      const anchorEl = (P.barAnchor && P.barAnchor()) || null;
+      // Universal Prompt-Surrounding Bar Anchor:
+      // Tightly crown/frame the AI chatbox/composer on all providers.
+      // If provider barAnchor() is absent or returns an invalid/detached/zero-width node,
+      // dynamically resolve the true chat prompt container by inspecting the editor and its ancestor cards.
+      function resolveAnchor() {
+        try {
+          let a = (P.barAnchor && P.barAnchor()) || null;
+          if (a && a.isConnected) {
+            const rect = a.getBoundingClientRect();
+            if (rect.width > 30 && rect.height > 10) return a;
+          }
+        } catch {}
+        try {
+          const ed = (P.getEditor && P.getEditor()) || (P.composerFrame && P.composerFrame()) || document.querySelector("textarea, [contenteditable="true"]");
+          if (!ed || !ed.isConnected) return null;
+          // Walk upward to find the prompt box / composer surface container
+          let cur = ed.parentElement;
+          let best = null;
+          for (let i = 0; cur && cur !== document.body && i < 12; i++, cur = cur.parentElement) {
+            try {
+              const cs = getComputedStyle(cur);
+              const rect = cur.getBoundingClientRect();
+              if (rect.width < 100 || rect.height < 24) continue;
+              // Check if this container visually looks like a prompt box / composer card
+              const hasBorder = cs.borderWidth && parseFloat(cs.borderWidth) > 0 && cs.borderStyle !== "none";
+              const hasRadius = (parseFloat(cs.borderTopLeftRadius) || 0) >= 8;
+              const hasShadow = cs.boxShadow && cs.boxShadow !== "none";
+              const hasBg = cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent";
+              const tag = cur.tagName.toLowerCase();
+              const isForm = tag === "form" || tag === "fieldset";
+              const isComposer = cur.className && typeof cur.className === "string" && /(composer|prompt|chat-input|input-box|chat-editor|message-input)/i.test(cur.className);
+              
+              if (isForm || isComposer || (hasRadius && (hasBorder || hasBg || hasShadow))) {
+                best = cur;
+                // If it's already a good composer card/form, prefer it
+                if (rect.width <= Math.min(window.innerWidth - 10, 1100) && rect.height <= 500) {
+                  return cur;
+                }
+              }
+            } catch {}
+          }
+          if (best) return best;
+          const frame = P.composerFrame && P.composerFrame();
+          if (frame && frame.isConnected) return frame;
+          return ed.closest("form") || ed.parentElement || null;
+        } catch {}
+        return null;
+      }
+
+      const anchorEl = resolveAnchor();
       if (anchorEl && anchorEl.isConnected) {
         bar.classList.remove("rs-bar-inline", "rs-bar-inside", "rs-bar-float");
         bar.classList.add("rs-bar-anchored");
         if (root && bar.parentElement !== root) root.appendChild(bar);
         let r = anchorEl.getBoundingClientRect();
-        if (!r.width) { bar.style.display = "none"; clearAnchorPad(); if (menuEl) menuEl.hidden = true; return; }
+        if (!r.width || !r.height) { bar.style.display = "none"; clearAnchorPad(); if (menuEl) menuEl.hidden = true; return; }
         bar.style.display = "flex";
         const bh = bar.offsetHeight || 34;
         if (anchorPadEl && anchorPadEl !== anchorEl) clearAnchorPad();
@@ -7206,10 +7255,12 @@ function renderCards(panel) {
         bar.style.top = Math.max(8, Math.round(window.innerHeight - bh - 16)) + "px";
         return;
       }
+      // When floating, crown the top edge of the prompt box / composer card
       const w = Math.min(r.width, BAR_MAX_W);
       const left = Math.round(r.left + (r.width - w) / 2);
       const bh = bar.offsetHeight || 40;
-      const top = Math.max(4, Math.round(r.top - bh - BAR_GAP));
+      // Hug directly above the prompt box's top boundary without excessive gap
+      const top = Math.max(4, Math.round(r.top - bh - 2));
       bar.style.width = w + "px";
       bar.style.left = left + "px";
       bar.style.top = top + "px";
