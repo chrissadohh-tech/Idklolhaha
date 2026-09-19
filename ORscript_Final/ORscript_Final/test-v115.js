@@ -104,7 +104,31 @@ ok("new studio daily commands", dailySrc.includes("script_set_source") && dailyS
 ok("new blender commands", opsPy.includes("def cmd_scale") && opsPy.includes("def cmd_bevel") && opsPy.includes("def cmd_keyframe_insert") && opsPy.includes("def cmd_track_to") && bg.includes("blender_subdivision") && bg.includes("blender_add_armature"));
 const fbSrc = fs.readFileSync(path.join(root, "providers/freebuff.js"), "utf8");
 ok("freebuff slow-chat not treated as hung", fbSrc.includes("PRESTART_MS: 180000") && fbSrc.includes("GEN_IDLE_MS: 14000") && fbSrc.includes("GEN_STOP_GRACE_MS: 12000") && fbSrc.includes("function busyChrome") && fbSrc.includes("return true;") && mainSrc.includes("T.PRESTART_MS") && mainSrc.includes("T.GEN_STOP_GRACE_MS") && !fbSrc.includes("unstableWarning"));
-ok("or_screenshot send-to-self", mainSrc.includes('name === "or_screenshot"') && mainSrc.includes('type: "capture_tab"') && mainSrc.includes('screenshot: "or_screenshot"') && mainSrc.includes("A.pendingImages = shots") && bg.includes('case "capture_tab"') && cfgSrc.includes("or_screenshot") && manJs.includes("1.18.0"));
+ok("capture guards live in the RIGHT branch (Studio vs Blender)",
+  (() => {
+    // The Studio guard is now a call into captureFailureHint() (which also tells
+    // the user WHICH fix applies); what matters is that the CALL sits in the
+    // Studio branch and the Blender note sits in the Blender branch.
+    const iGuard = mainSrc.indexOf("return captureFailureHint(name);");
+    const iStash = mainSrc.indexOf("images.stashed");            // Studio generic branch
+    const iOrphan = mainSrc.indexOf("// Orphaned content script"); // its end
+    const iBlenderHdr = mainSrc.indexOf("const BLENDER_OPS = new Set(");
+    const iBlenderFail = mainSrc.indexOf('"Blender call failed"');
+    const iNote = mainSrc.indexOf("Blender saved the capture but nothing could be read back");
+    return iGuard > iStash && iGuard < iOrphan &&          // vision guard → Studio branch
+           iNote > iBlenderHdr && iNote < iBlenderFail;    // read-back note → Blender branch
+  })());
+ok("capture failures name the agent build (no silent empty result)",
+  mainSrc.includes("function agentBuildNote") && mainSrc.includes('AGENT_CAPTURE_MIN = "1.18.1"') &&
+  mainSrc.includes("agentVersionBelow") && mainSrc.includes("the capture came back with no text and no image") &&
+  mainSrc.includes("Blender saved the capture but nothing could be read back") &&
+  bg.includes("agent_version: agentVersion || undefined") && bg.includes("let agentVersion = \"\"") &&
+  bg.includes("typeof j.version === \"string\"") && mainSrc.includes("agent_version: bridge.agent_version"));
+ok("capture = the two native tools, no OR wrapper/aliases",
+  !mainSrc.includes("or_screenshot") && !bg.includes("or_screenshot") && !cfgSrc.includes("or_screenshot") &&
+  !bg.includes("capture_tab") && !bg.includes("blender_screenshot") &&
+  cfgSrc.includes('n === "screen_capture" || n === "get_viewport_screenshot"') &&
+  mainSrc.includes('"get_viewport_screenshot","blender_export_fbx","blender_execute_code"]);') && manJs.includes("1.18.0"));
 ok("condo lock is condo-topic only", mainSrc.includes("function isCondoTopic") && mainSrc.includes("function punishCondo") && mainSrc.includes("CONDO LOCK") && mainSrc.includes("enforceCondo") && mainSrc.includes("rsCondoLock") && mainSrc.includes("condo-topic ONLY") && cfgSrc.includes("never build Roblox condo games"));
 const plusSrc = fs.readFileSync(path.join(root, "core/studio_plus.js"), "utf8");
 const claudeSrc = fs.readFileSync(path.join(root, "providers/claude.js"), "utf8");

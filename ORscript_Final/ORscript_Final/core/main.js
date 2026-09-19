@@ -74,12 +74,6 @@
     script_lint: "script_analysis",
     lint_script: "script_analysis",
     lint_scripts: "script_analysis",
-    screenshot: "or_screenshot",
-    take_screenshot: "or_screenshot",
-    screenshot_send: "or_screenshot",
-    send_screenshot: "or_screenshot",
-    capture_screenshot: "or_screenshot",
-    or_screen_shot: "or_screenshot",
     debug_run: "or_debug",
     debug_console: "or_debug",
     auto_debug: "or_debug",
@@ -421,6 +415,7 @@
   };
   let orTheme = "night";
   let soundOn = true;
+  let shotFast = true;   // mirrors chrome.storage "rs-shot-max" (0 = originals)
   try {
     chrome.storage.local.get(["rsTheme", "rsSounds"], (r) => {
       if (r && OR_THEMES[r.rsTheme]) orTheme = r.rsTheme;
@@ -457,6 +452,18 @@
     applyOrSkin();
     try { chrome.storage.local.set({ rsTheme: id }); } catch {}
   }
+  // Capture speed: ON = oversized captures are resized before upload (quicker),
+  // OFF = the full-size original is sent. Background reads the same storage key,
+  // so flipping this takes effect immediately - no extension reload.
+  function setShotFast(v) {
+    shotFast = !!v;
+    try { chrome.storage.local.set({ "rs-shot-max": shotFast ? 1400 : 0 }); } catch {}
+    try { buildMenu(); } catch {}
+    toast(shotFast
+      ? "Fast screenshots ON - captures are resized before upload"
+      : "Fast screenshots OFF - sending full-size captures");
+  }
+
   function setSounds(v) {
     soundOn = !!v;
     try { chrome.storage.local.set({ rsSounds: soundOn }); } catch {}
@@ -1280,6 +1287,66 @@
   // error on non-vision providers, so nothing needs to be predicted here.
   const ALWAYS_BLOCKED_TOOLS = new Set(["subagent"]);
   const VISION_TOOLS = new Set(["screen_capture"]);
+  // Captures need an or-agent that carries MCP image content items through the
+  // bridge (and, for Blender, the binary read-back). An older or-agent.exe
+  // fails these SILENTLY - Studio answers a capture with an image item only, so
+  // the old bridge forwards ok + empty text. Every capture failure therefore
+  // names the build, so a stale binary is never mistaken for a broken Studio.
+  const AGENT_CAPTURE_MIN = "1.18.1";
+  function agentVersionBelow(version, min) {
+    const m = String(version || "").match(/^(\d+)\.(\d+)\.(\d+)/);
+    if (!m) return true;                         // unknown ⇒ assume old
+    const cur = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const tgt = min.split(".").map(Number);
+    for (let i = 0; i < 3; i++) if (cur[i] !== tgt[i]) return cur[i] < tgt[i];
+    return false;
+  }
+  // A capture that answers "ok" with NO text and NO image means the picture died
+  // on its way to us. WHICH fix applies is visible from the tool list: the
+  // Python host (Start OR Agent.bat) advertises or_host_read_image, so
+  // Studio's 27 tools become 28. No host + an old agent = the bytes are being
+  // dropped inside or-agent.exe; host present = Studio itself sent no picture.
+  function captureFailureHint(name) {
+    const n = A.toolNames.size;
+    // Version first: a 1.18.1+ agent carries Studio's MCP images itself, so with
+    // a current build the Python host (and its 28th tool) is NOT required - a
+    // capture that still comes back empty means Studio produced no picture.
+    const v = String((A.bridge && A.bridge.agent_version) || "");
+    if (!agentVersionBelow(v, AGENT_CAPTURE_MIN)) {
+      ui.banner("warn", "Studio returned no picture",
+        "The agent is current, so check Studio: Manage MCP Servers, and that the place is open.");
+      return `ERROR calling '${name}': the capture came back with no text and no image, but the running agent ` +
+        `(v${v}) does carry MCP images - so Studio itself produced no picture. Open the place in Studio and check ` +
+        `Assistant -> Manage MCP Servers -> "Enable Studio as MCP Server", then call ${name} again. ` +
+        `(A leftover StudioMCP.exe holding port 13469 also does this - close Studio fully, kill StudioMCP.exe in Task Manager, reopen Studio.)`;
+    }
+    const hostUp = A.toolNames.has("or_host_read_image");
+    if (!hostUp) {
+      ui.banner("warn", "Studio captures need the Python host",
+        'Close OR, then start it with "Start OR Agent.bat" instead of or-agent.exe.');
+      return `ERROR calling '${name}': the capture came back with no text and no image. ` +
+        `TOOLS ${n} (the Python host would add a 28th tool), so the old or-agent.exe dropped the picture: ` +
+        `either it was started without the host, or an old process still owns port 3000. Best fix: use the rebuilt ` +
+        `or-agent.exe from the repo (no host needed). Otherwise close OR and run "Start OR Agent.bat", ` +
+        `then call ${name} again.`;
+    }
+    return `ERROR calling '${name}': the capture came back with no text and no image. ` +
+      `The Python host IS running (TOOLS ${n}), so Studio itself returned no picture: open the place in Studio and check ` +
+      `Assistant -> Manage MCP Servers -> "Enable Studio as MCP Server", then call ${name} again.`;
+  }
+
+  function agentBuildNote() {
+    const v = String((A.bridge && A.bridge.agent_version) || "");
+    const label = v ? `agent v${v}` : "agent version unknown (an older build)";
+    if (!agentVersionBelow(v, AGENT_CAPTURE_MIN)) {
+      return ` (${label} - which is current, so the bridge is not the problem: check the MCP link inside Studio itself).`;
+    }
+    return ` (${label}). No install needed: start the agent with "Start OR Agent.bat" instead of or-agent.exe - ` +
+      `it runs Studio's MCP through studio_mcp_host.py (the Python host that ships with ORscript, the same trick ` +
+      `ZeroScript uses), which hands captures back as images on the exe you already have. Or rebuild: ` +
+      `"cd agent && cargo build --release", copy agent/target/release/or-agent.exe over the old one, restart it. ` +
+      `Open http://127.0.0.1:3000/ to see which build is actually running - 1.18.0 = the old committed exe, 1.18.1 = the fixed one.`;
+  }
   const bareToolName = (name) => (name && name.includes("/") ? name.split("/").pop() : name) || "";
   // The ONLY sanctioned way to read the active engine outside build()'s closure.
   // Returns exactly "roblox" | "local". Legacy "anim" storage maps onto Roblox
@@ -1959,51 +2026,6 @@
     // Virtual command: list available commands with full details. Defaults to
     // the primary server for the *current* engine — Roblox when RS/AN, AgentScript when AS.
     // A DIFFERENT server's tools only show up if the model asks via {"server": "<id>"}.
-        if (name === "or_screenshot" || name === "screenshot") {
-      if (!P.supportsVision) {
-        return "ERROR: this assistant cannot see images, so or_screenshot cannot send a shot back to you. Open a vision-capable chat (DeepSeek, Gemini, GLM, Qwen, Meta AI, Freebuff, Ox Alpha, Use AI) and call or_screenshot again.";
-      }
-      const target = String(args.target || args.source || "auto").toLowerCase();
-      const shots = [];
-      const notes = [];
-      const tryMcp = async (toolName, label) => {
-        try {
-          const r = await bg({ type: "call_tool", name: toolName, arguments: args, timeout: 45000 });
-          if (r && r.ok && r.images && r.images.length) {
-            shots.push(...r.images);
-            notes.push(label + ": " + r.images.length + " image(s)");
-            return true;
-          }
-          if (r && !r.ok) notes.push(label + ": " + String(r.error || "failed").slice(0, 160));
-        } catch (e) {
-          notes.push(label + ": " + String(e && e.message || e).slice(0, 160));
-        }
-        return false;
-      };
-      const wantStudio = target === "auto" || target === "studio" || target === "roblox" || target === "viewport";
-      const wantBlend = target === "auto" || target === "blender";
-      const wantTab = target === "tab" || target === "chat" || target === "page" || target === "self";
-      if (wantStudio) await tryMcp("screen_capture", "studio");
-      if (wantBlend && !shots.length) await tryMcp("get_viewport_screenshot", "blender");
-      if (wantTab || (target === "auto" && !shots.length)) {
-        try {
-          const r = await bg({ type: "capture_tab" });
-          if (r && r.ok && r.images && r.images.length) {
-            shots.push(...r.images);
-            notes.push("tab: " + r.images.length + " image(s)");
-          } else if (r && !r.ok) notes.push("tab: " + String(r.error || "failed").slice(0, 160));
-        } catch (e) {
-          notes.push("tab: " + String(e && e.message || e).slice(0, 160));
-        }
-      }
-      if (!shots.length) {
-        return "ERROR: or_screenshot captured nothing. " + (notes.join(" | ") || "Studio MCP screen_capture and tab capture both failed.") + " Connect Studio MCP or pass {\"target\":\"tab\"}.";
-      }
-      ui.showImages(shots, "or_screenshot");
-      A.pendingImages = shots;
-      const caption = notes.join("; ") || (shots.length + " image(s) captured");
-      return "Output of 'or_screenshot':\n" + caption + "\n(The image is attached to THIS message — you can see it directly. Analyse it and continue.)";
-    }
     if (name === "or_debug" || name === "debug_run" || name === "debug_console") {
       const code = [
         "local hs=game:GetService(\"HttpService\")",
@@ -2055,6 +2077,7 @@
         permissions: perm,
         bridge_connected: bridge.connected === true,
         blender: !!bridge.blender,
+        agent_version: bridge.agent_version || "(unknown - rebuild the agent if captures fail)",
         tools: A.toolList.length || 0,
         agent_started: !!A.started,
         agent_running: !!A.running,
@@ -2144,7 +2167,7 @@
       const animLines = requested === "roblox" ? RSAnim.describeCommands() : [];
       const skillLines = (requested === "roblox" && typeof RobloxScriptSkills !== "undefined") ? RobloxScriptSkills.describeCommands() : [];
       const agentLines = (requested === "local" && typeof AgentScriptSkills !== "undefined") ? AgentScriptSkills.describeCommands() : [];
-      const webLines = [`— OR Status: or_status {} — live engine, work mode, extra thinking, bridge, blender. Call this if you are unsure which mode you are in.`, `— Web Tools (bridge-level, no Studio needed): web_fetch {url?, query?, max_chars?} — fetch a URL, OR pass query to search the web then fetch the top result; web_search {query, limit?} — DuckDuckGo titles+URLs`, `— Screenshot: or_screenshot {target?: auto|studio|tab|blender} — take a screenshot of Studio, this chat tab, or Blender and attach it to your next message so you can see it. Aliases: screenshot, take_screenshot, send_screenshot.`, `— Debugger: or_debug {} — Studio LogService errors/warnings. Automatic Debugger (Settings) appends new errors after mutating commands.`, `— Multi-Agent: or_agent {role: planner|builder|reviewer|debugger, task?} — hand off to a specialist. Enable Multi-Agent in Settings.`, `— Developer Products: developer_product_create {name, price, description?, reward?} — create a real Roblox Developer Product on this published universe (sign into roblox.com in Chrome). developer_product_list {} lists them. Aliases: create_developer_product, create_dev_product.`];
+      const webLines = [`— OR Status: or_status {} — live engine, work mode, extra thinking, bridge, blender. Call this if you are unsure which mode you are in.`, `— Web Tools (bridge-level, no Studio needed): web_fetch {url?, query?, max_chars?} — fetch a URL, OR pass query to search the web then fetch the top result; web_search {query, limit?} — DuckDuckGo titles+URLs`, `— Screenshots: screen_capture {} — Roblox Studio viewport; get_viewport_screenshot {max_size?} — Blender viewport (Connect Blender must be on). Either one attaches the image to your next message so you can see it.`, `— Debugger: or_debug {} — Studio LogService errors/warnings. Automatic Debugger (Settings) appends new errors after mutating commands.`, `— Multi-Agent: or_agent {role: planner|builder|reviewer|debugger, task?} — hand off to a specialist. Enable Multi-Agent in Settings.`, `— Developer Products: developer_product_create {name, price, description?, reward?} — create a real Roblox Developer Product on this published universe (sign into roblox.com in Chrome). developer_product_list {} lists them. Aliases: create_developer_product, create_dev_product.`];
       const virtualCount = animLines.length + skillLines.length + agentLines.length + webLines.length;
       return `Output of '${name}':\n${requested} commands (${scoped.length}${virtualCount ?  ` + ${virtualCount} OR virtual tools` : ""}):\n\n${lines.join("\n\n")}${animLines.length ?  "\n\n" + animLines.join("\n\n") : ""}${skillLines.length ?  "\n\n" + skillLines.join("\n\n") : ""}${agentLines.length ?  "\n\n" + agentLines.join("\n\n") : ""}\n\n${webLines.join("\n")}`;
     }
@@ -2187,7 +2210,7 @@
       } } catch {}
       return res;
     }
-    const BLENDER_OPS = new Set(["get_scene_info","get_object_info","execute_blender_code","get_viewport_screenshot","blender_export_fbx","blender_execute_code","blender_screenshot"]);
+    const BLENDER_OPS = new Set(["get_scene_info","get_object_info","execute_blender_code","get_viewport_screenshot","blender_export_fbx","blender_execute_code"]);
     if (BLENDER_OPS.has(bareName) || /^blender_/.test(bareName)) {
       if (!(A.bridge && A.bridge.blender)) {
         let st = await bg({ type: "blender_status" });
@@ -2237,6 +2260,14 @@
         if (autoStudio) {
           const imported = await runAssetBridgeImport({ source: "blender", asset: r.filepath || args.filepath || args.path || "scene", objects: args.objects, dest: args.dest, scale: args.scale });
           return `Output of '${name}':\n${textOut}\n\nStudio:\n${imported}`;
+        }
+        // get_viewport_screenshot writes a PNG and reports its path; the
+        // extension reads those bytes back (read_file_base64) and attaches them.
+        // If nothing was attached, say why - the file IS on disk, so silence
+        // would look like "Blender took a screenshot but the model can't see it".
+        if (bareName === "get_viewport_screenshot") {
+          return `Output of '${name}':\n${textOut}\n\nNOTE: Blender saved the capture but nothing could be read back as an image.` +
+            agentBuildNote() + ` Then call ${name} again.`;
         }
         return `Output of '${name}':\n${textOut}`;
       }
@@ -2340,6 +2371,14 @@
           ? r.text.trim()
           : `${r.images.length} image(s) captured.`;
         return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
+      }
+      // A capture answering "ok" with NO text and NO image is what an OLD
+      // or-agent returns: Studio's screen_capture delivers the picture as an MCP
+      // image content item ONLY, so a bridge without image passthrough hands
+      // back an empty string. Name the running build instead of printing a bare
+      // "(tool returned an empty result)" - that message sent us hunting twice.
+      if (VISION_TOOLS.has(bareName) && !String(r.text || "").trim()) {
+        return captureFailureHint(name);
       }
       const text = r.text && r.text.length ?  r.text : "(tool returned an empty result)";
       return `Output of '${name}':\n${text}`;
@@ -2766,9 +2805,9 @@
           // Ride the system-prompt re-statement out on this result if one is due
           // and it fits (see withSysResend - the result itself is never trimmed).
           toSend = withSysResend(toSend);
-          const images = A.pendingImages;
+                    let images = A.pendingImages;
           A.pendingImages = null;
-          diag("images.consumed", { count: images ?  images.length : 0 });
+          diag("images.consumed", { count: images ? images.length : 0 });
           base = await submitAndGetBase(toSend, images);
         }
       }
@@ -3070,7 +3109,7 @@
     if (A.forceSysResend) return true;   // mode toggled (Forge/Extra) — restate NOW
     if (!RESEND_SYS_EVERY) return false;
     const { users, results } = sinceLastSys();
-    const due = users >= RESEND_SYS_EVERY || results >= RESEND_SYS_EVERY_RESULTS;
+    const due = (tweakMode && results >= 3) || users >= RESEND_SYS_EVERY || results >= RESEND_SYS_EVERY_RESULTS;
     // Logged sparsely on purpose: this is consulted on EVERY tool result, and an
     // entry each time would flush the 300-slot diag ring of everything else -
     // exactly the history you need when something goes wrong. The verdict turn
@@ -4255,15 +4294,43 @@
     // All four persist. The loads below restore the user's choices after a
     // reload - they used to silently reset to these defaults on every page
     // refresh because only the setters ever touched chrome.storage.
-    let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false;
+    // ── Persistent Visual Reference in Settings (Compact & Non-Intrusive) ──
+    let visualRef = {
+      active: false,
+      mode: "gui", // "gui" | "build"
+      data: "",     // base64 image data
+      mimeType: "image/jpeg",
+      preview: "",  // shrunk thumbnail dataUrl
+      name: "",
+      notes: "",
+      width: 0,
+      height: 0
+    };
+    try { window.__rsVisualRef = () => visualRef; } catch {}
+
+    let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false, tweakMode = false;
+    let diagDebug = "off"; // "off" | "basic" | "detailed" | "trace"
+    try { window.__rsDiagDebug = () => diagDebug; } catch {}
     let workMode = "balanced";
     try { window.__rsWorkMode = () => workMode; } catch {}
     try { window.__rsPlanMode = () => planMode; } catch {}
     try { window.__rsAutoDebug = () => autoDebugEnabled; } catch {}
     try { window.__rsMultiAgent = () => multiAgent; } catch {}
+    try { window.__rsTweakMode = () => tweakMode; } catch {}
     try {
-      chrome.storage.local.get(["rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsAutoDebug", "rsMultiAgent"], (r) => {
+      chrome.storage.local.get(["rs-shot-max", "rs-shot-quality", "rsShotFast", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsThinkingLevel", "rsSounds", "rsBgMode", "rsAutoDebug", "rsMultiAgent", "rsTweakMode", "rsDiagDebug"], (r) => {
         if (!r) return;
+        // rs-shot-max is the single source of truth (0 = send originals).
+        {
+          const m = Number(r["rs-shot-max"]);
+          if (Number.isFinite(m)) shotFast = m > 0;
+          else if (typeof r.rsShotFast === "boolean") shotFast = r.rsShotFast;
+          try { buildMenu(); } catch {}
+        }
+        if (r.rsVisualRef && typeof r.rsVisualRef === "object") {
+          visualRef = Object.assign(visualRef, r.rsVisualRef);
+          try { window.__rsVisualRef = () => visualRef; } catch {}
+        }
         if (typeof r.rsAutoFix === "boolean") autoFixEnabled = r.rsAutoFix;
         if (typeof r.rsExtraThinking === "boolean") {
           extraThinking = r.rsExtraThinking;
@@ -4280,6 +4347,7 @@
         if (typeof r.rsMultiAgent === "boolean") {
           multiAgent = r.rsMultiAgent;
           try { window.__rsMultiAgent = () => multiAgent; } catch {}
+    try { window.__rsTweakMode = () => tweakMode; } catch {}
         }
         if (typeof r.rsForgeMode === "boolean") {
           forgeMode = r.rsForgeMode;
@@ -4289,7 +4357,12 @@
           } catch {}
         }
         if (typeof r.rsAutoFixStopPlay === "boolean") autoFixStopPlay = r.rsAutoFixStopPlay;
-        if (["fast","balanced","thorough"].includes(r.rsWorkMode)) {
+        if (["off", "basic", "detailed", "trace"].includes(r.rsDiagDebug)) {
+          diagDebug = r.rsDiagDebug;
+          try { window.__rsDiagDebug = () => diagDebug; } catch {}
+        }
+        
+                if (["fast","balanced","thorough"].includes(r.rsWorkMode)) {
           workMode = r.rsWorkMode;
           try { window.__rsWorkMode = () => workMode; } catch {}
         }
@@ -4330,6 +4403,7 @@
         if (changes.rsMultiAgent && typeof changes.rsMultiAgent.newValue === "boolean") {
           multiAgent = changes.rsMultiAgent.newValue;
           try { window.__rsMultiAgent = () => multiAgent; } catch {}
+    try { window.__rsTweakMode = () => tweakMode; } catch {}
           dirty = true;
         }
         if (changes.rsForgeMode && typeof changes.rsForgeMode.newValue === "boolean") {
@@ -4502,6 +4576,15 @@
     function setPlanMode(v){ planMode=!!v; try{chrome.storage.local.set({rsPlanMode: planMode});}catch{}; try{ window.__rsPlanMode = () => planMode; }catch{}; buildMenu(); renderBar(); toast(v ? "Plan mode on — the AI writes a plan, then production code" : "Plan mode off"); markModesChanged(); }
     function setAutoDebug(v){ autoDebugEnabled=!!v; try{chrome.storage.local.set({rsAutoDebug: autoDebugEnabled});}catch{}; try{ window.__rsAutoDebug = () => autoDebugEnabled; }catch{}; buildMenu(); toast(v ? "Automatic Debugger on — new Studio errors are sent to the AI" : "Automatic Debugger off"); markModesChanged(); }
     function setMultiAgent(v){ multiAgent=!!v; try{chrome.storage.local.set({rsMultiAgent: multiAgent});}catch{}; try{ window.__rsMultiAgent = () => multiAgent; }catch{}; buildMenu(); toast(v ? "Multi-Agent on — planner, builder, reviewer, debugger" : "Multi-Agent off"); markModesChanged(); }
+    function setTweakMode(v) {
+      tweakMode = !!v;
+      try { chrome.storage.local.set({ rsTweakMode: tweakMode }); } catch {}
+      try { window.__rsTweakMode = () => tweakMode; } catch {}
+      A.forceSysResend = true;
+      buildMenu();
+      toast(v ? "Tweak Mode (Rule Reinforcement) on" : "Tweak Mode off");
+      markModesChanged();
+    }
     function setForgeMode(v){ forgeMode=!!v; try{chrome.storage.local.set({rsForgeMode: forgeMode});}catch{}; try{ document.documentElement.setAttribute("data-rs-forge", forgeMode?"1":"0"); window.__rsForge = () => forgeMode; }catch{}; buildMenu(); markModesChanged(); }
     // Toggling a mode mid-session must reach the AI on the NEXT turn, not ~12
     // results later: force the full system prompt (which now carries the
@@ -4884,13 +4967,92 @@
               <span class="rs-tgl-sub">Planner → builder → reviewer → debugger. Call or_agent to hand off.</span></span>
               <span class="rs-tgl ${multiAgent ? "on" : ""}"></span>
             </div>
+            <div class="rs-tgl-row" data-mode="tweakmode" role="switch" aria-checked="${tweakMode}" tabindex="0">
+              <span class="rs-tgl-info"><span class="rs-tgl-name">Tweak Mode (Rule Reinforcement)</span>
+              <span class="rs-tgl-sub">Continuously reminds and enforces core rules (mathematics, strict Luau, server authority, memory cleanup, mobile support) on repeated long prompts.</span></span>
+              <span class="rs-tgl ${tweakMode ? "on" : ""}"></span>
+            </div>
             <div class="rs-tgl-row" data-mode="sounds" role="switch" aria-checked="${soundOn}" tabindex="0">
               <span class="rs-tgl-info"><span class="rs-tgl-name">Sound effects</span>
               <span class="rs-tgl-sub">Chime when the agent starts, finishes, or errors.</span></span>
               <span class="rs-tgl ${soundOn ? "on" : ""}"></span>
             </div>
           </section>
+          <section class="rs-menu-sec">
+            <div class="rs-sec-label"><span>Captures</span></div>
+            <div class="rs-tgl-row" data-mode="fastshots" role="switch" aria-checked="${shotFast}" tabindex="0">
+              <span class="rs-tgl-info"><span class="rs-tgl-name">Fast screenshots</span>
+              <span class="rs-tgl-sub">Resize captures over 350 KB to 1400 px before upload — a screenshot arrives much quicker, still readable. Off = full-size originals.</span></span>
+              <span class="rs-tgl ${shotFast ? "on" : ""}"></span>
+            </div>
+          </section>
             
+                    <section class="rs-menu-sec" id="rs-vref-sec">
+            <div class="rs-sec-label">
+              <span>Visual Reference Target</span>
+              <button type="button" class="rs-vref-toggle-btn ${visualRef.enabled !== false ? "on" : "off"}" id="rs-vref-toggle">
+                ${visualRef.enabled !== false ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+            <div class="rs-menu-note">Set a reference image and target mode. When enabled, the AI calculates strict mathematical proportions, UDim2 ratios, and alignments.</div>
+            
+            <div class="rs-ref-mode-row">
+              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "gui" ? "on" : ""}" id="rs-ref-mode-gui" title="Reference for GUI (HUDs, Menus, Inventory, Frames)">
+                <span>🖥️ GUI Layout</span>
+              </button>
+              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "build" ? "on" : ""}" id="rs-ref-mode-build" title="Reference for 3D Builds, Models, Props">
+                <span>🏰 Build / Model</span>
+              </button>
+            </div>
+
+            ${visualRef.active && visualRef.preview ? `
+              <div class="rs-ref-card">
+                <div class="rs-ref-card-body">
+                  <div class="rs-ref-preview-wrap">
+                    <img class="rs-ref-preview-img" src="${visualRef.preview}" alt="Reference">
+                  </div>
+                  <div class="rs-ref-card-info">
+                    <span class="rs-ref-card-title" title="${esc(visualRef.name)}">${esc(visualRef.name || "Reference Image")}</span>
+                    <span class="rs-ref-badge ${visualRef.mode === "build" ? "build" : "gui"}">${visualRef.mode === "build" ? "Build Target" : "GUI Target"}</span>
+                    <span class="rs-ref-meta">${visualRef.width && visualRef.height ? `${visualRef.width}×${visualRef.height} px • ` : ""}Mathematical Spec</span>
+                    <div class="rs-ref-actions">
+                      <button type="button" class="rs-ref-replace-btn" id="rs-ref-replace-btn">Change</button>
+                      <button type="button" class="rs-ref-remove-btn" id="rs-ref-clear-btn">Remove</button>
+                    </div>
+                  </div>
+                </div>
+                <input id="rs-ref-notes" class="rs-mcp-field" placeholder="Optional notes (e.g. ignore background, exact 400x300 canvas)" value="${esc(visualRef.notes || "")}" />
+              </div>
+            ` : `
+              <div class="rs-ref-dropzone" id="rs-ref-dropzone" tabindex="0" role="button">
+                <div class="rs-ref-dropzone-inner">
+                  <span class="rs-ref-drop-icon">🖼️</span>
+                  <div class="rs-ref-drop-text">
+                    <b>Drop reference image here</b> or <u>browse</u>
+                  </div>
+                </div>
+              </div>
+            `}
+            <input type="file" id="rs-ref-file-input" accept="image/*,.png,.jpg,.jpeg,.webp" style="display:none;" />
+          </section>
+
+                    <section class="rs-menu-sec" id="rs-diag-sec">
+            <div class="rs-sec-label"><span>Diagnostic Debug System</span></div>
+            <div class="rs-menu-note">Embeds structured runtime observability directly into scripts (no separate module). Tracks earnings/losses, trajectories, state transitions, and pre-failure histories without Output spam.</div>
+            <div class="rs-diag-row">
+              <button type="button" class="rs-diag-btn ${diagDebug === "off" ? "on" : ""}" data-diag="off" title="Disabled — zero overhead, no diagnostics, silent">Off</button>
+              <button type="button" class="rs-diag-btn ${diagDebug === "basic" ? "on" : ""}" data-diag="basic" title="Basic — critical events, state transitions, failures, and transactions">Basic</button>
+              <button type="button" class="rs-diag-btn ${diagDebug === "detailed" ? "on" : ""}" data-diag="detailed" title="Detailed — adds periodic 0.5s snapshots, calculations, and bounded history">Detailed</button>
+              <button type="button" class="rs-diag-btn ${diagDebug === "trace" ? "on" : ""}" data-diag="trace" title="Trace — deep state tracking and high-frequency diagnostics for elusive bugs">Trace</button>
+            </div>
+            <div class="rs-menu-note" style="margin-top:4px;">${
+              diagDebug === "off" ? "Disabled — scripts run with standard code and no diagnostic overhead." :
+              diagDebug === "basic" ? "Basic — tracks critical transactions, state shifts, and failures directly in code." :
+              diagDebug === "detailed" ? "Detailed — includes periodic snapshots (trajectories, calculations) in bounded buffers." :
+              "Trace — maximum internal state tracking and deep failure context."
+            }</div>
+          </section>
+
           <section class="rs-menu-sec" id="rs-checkpoint-sec">
             <div class="rs-sec-label"><span>Recent Checkpoints</span></div>
             <div class="rs-menu-note">Saved before each change. Use Studio Undo (Ctrl+Z) if needed. Last 10 kept.</div>
@@ -4974,6 +5136,8 @@
           else if(m==="plan") setPlanMode(!planMode);
           else if(m==="autodebug") setAutoDebug(!autoDebugEnabled);
           else if(m==="multiagent") setMultiAgent(!multiAgent);
+          else if(m==="tweakmode") setTweakMode(!tweakMode);
+          else if(m==="fastshots") setShotFast(!shotFast);
           else if(m==="sounds") { setSounds(!soundOn); try { buildMenu(); toast(soundOn ? "Sound effects on" : "Sound effects off"); if (soundOn) playSfx("ok"); } catch {} }
         };
         btn.addEventListener("click", flip);
@@ -4982,6 +5146,83 @@
         });
       });
       // ── Image → Model: paste the vision builder template ──
+            // ── Visual Reference settings events ──
+      const refModeGuiBtn = menuEl.querySelector("#rs-ref-mode-gui");
+      const refModeBuildBtn = menuEl.querySelector("#rs-ref-mode-build");
+      if (refModeGuiBtn) refModeGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
+      if (refModeBuildBtn) refModeBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
+
+      // ── Visual Reference settings events ──
+      const refToggleBtn = menuEl.querySelector("#rs-vref-toggle");
+      if (refToggleBtn) {
+        refToggleBtn.addEventListener("click", () => {
+          const next = visualRef.enabled === false ? true : false;
+          setVisualRefEnabled(next);
+        });
+      }
+      const refGuiBtn = menuEl.querySelector("#rs-ref-mode-gui");
+      const refBuildBtn = menuEl.querySelector("#rs-ref-mode-build");
+      if (refGuiBtn) refGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
+      if (refBuildBtn) refBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
+
+      const refFileInput = menuEl.querySelector("#rs-ref-file-input");
+      const refDropzone = menuEl.querySelector("#rs-ref-dropzone");
+      const refReplaceBtn = menuEl.querySelector("#rs-ref-replace-btn");
+      const refClearBtn = menuEl.querySelector("#rs-ref-clear-btn");
+      const refNotesInput = menuEl.querySelector("#rs-ref-notes");
+
+      if (refNotesInput) {
+        refNotesInput.addEventListener("change", () => {
+          visualRef.notes = refNotesInput.value.trim();
+          try { window.__rsVisualRef = () => visualRef; } catch {}
+          try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+        });
+      }
+
+      if (refClearBtn) {
+        refClearBtn.addEventListener("click", () => clearVisualRef());
+      }
+
+      if (refReplaceBtn && refFileInput) {
+        refReplaceBtn.addEventListener("click", () => refFileInput.click());
+      }
+
+      if (refDropzone && refFileInput) {
+        refDropzone.addEventListener("click", () => refFileInput.click());
+        refDropzone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.add("dragover");
+        });
+        refDropzone.addEventListener("dragleave", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.remove("dragover");
+        });
+        refDropzone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          refDropzone.classList.remove("dragover");
+          const files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files.length) setVisualRefImage(files[0]);
+        });
+      }
+
+      if (refFileInput) {
+        refFileInput.addEventListener("change", (e) => {
+          const files = e.target.files;
+          if (files && files.length) setVisualRefImage(files[0]);
+        });
+      }
+
+            // ── Diagnostic Debug System buttons ──
+      menuEl.querySelectorAll(".rs-diag-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const lvl = btn.getAttribute("data-diag");
+          if (lvl) setDiagDebug(lvl);
+        });
+      });
+
       const i2mBtn = menuEl.querySelector("#rs-i2m-btn");
       if (i2mBtn) i2mBtn.addEventListener("click", () => {
         let visionOk = false;
@@ -5529,6 +5770,100 @@ let cardsUiStyle = "modern";
         ref: "STYLE BIBLE — CARTOON. Palette: sky 120,200,255 / orange 255,140,60 / cream 255,244,214 / line-black 20,20,20. UICorner 12. UIStroke 3–4px black (cel outline). Font=FredokaOne or GothamBlack. Flat fills, no realistic gradients. Bubbly shapes. Feels like a sticker book."
       }
     };
+        function shrinkRefDataUrl(url, maxDim = 800) {
+      return new Promise((resolve) => {
+        try {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              let w = img.width, h = img.height;
+              if (w > maxDim || h > maxDim) {
+                const s = maxDim / Math.max(w, h);
+                w = Math.round(w * s); h = Math.round(h * s);
+              }
+              const c = document.createElement("canvas");
+              c.width = w; c.height = h;
+              const ctx = c.getContext("2d");
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve({
+                dataUrl: c.toDataURL("image/jpeg", 0.82),
+                width: w,
+                height: h,
+                origW: img.width,
+                origH: img.height
+              });
+            } catch (e) { resolve({ dataUrl: url, width: img.width || 0, height: img.height || 0 }); }
+          };
+          img.onerror = () => resolve({ dataUrl: url, width: 0, height: 0 });
+          img.src = url;
+        } catch (e) { resolve({ dataUrl: url, width: 0, height: 0 }); }
+      });
+    }
+
+    async function setVisualRefImage(file) {
+      if (!file) return;
+      try {
+        const rawUrl = await readUiFile(file);
+        if (!rawUrl) return;
+        const shrunk = await shrinkRefDataUrl(rawUrl, 800);
+        const m = String(shrunk.dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) return;
+        visualRef.active = true;
+        visualRef.mimeType = m[1];
+        visualRef.data = m[2];
+        visualRef.preview = shrunk.dataUrl;
+        visualRef.name = file.name || "Reference Image";
+        visualRef.width = shrunk.width;
+        visualRef.height = shrunk.height;
+        try { window.__rsVisualRef = () => visualRef; } catch {}
+        try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+        buildMenu();
+        toast("Visual reference saved: " + (visualRef.mode === "build" ? "Build / 3D Model" : "GUI"));
+      } catch (e) {
+        toast("Failed to load reference image");
+      }
+    }
+
+    function clearVisualRef() {
+      visualRef.active = false;
+      visualRef.data = "";
+      visualRef.preview = "";
+      visualRef.name = "";
+      visualRef.notes = "";
+      visualRef.width = 0;
+      visualRef.height = 0;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Visual reference cleared");
+    }
+
+    function setVisualRefEnabled(on) {
+      visualRef.enabled = !!on;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Visual Reference " + (visualRef.enabled ? "Enabled" : "Disabled"));
+    }
+
+    function setVisualRefMode(mode) {
+      if (mode !== "gui" && mode !== "build") return;
+      visualRef.mode = mode;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Reference target set to " + (mode === "build" ? "Build / 3D Model" : "GUI"));
+    }
+
+    function setDiagDebug(level) {
+      if (!["off", "basic", "detailed", "trace"].includes(level)) return;
+      diagDebug = level;
+      try { window.__rsDiagDebug = () => diagDebug; } catch {}
+      try { chrome.storage.local.set({ rsDiagDebug: level }); } catch {}
+      buildMenu();
+      toast("Diagnostic Debugging: " + level.toUpperCase());
+    }
+
     function uiRefFromDataUrl(url, name) {
       const m = String(url || "").match(/^data:([^;]+);base64,(.+)$/);
       if (!m) return null;
@@ -6605,7 +6940,7 @@ function renderCards(panel) {
     }
 
     // Where the bar lives INSIDE the site's composer. We insert it as a real,
-    // in-flow DOM node (between the model tabs and the input on DeepSeek), so it
+    // in-flow DOM node (inside the composer above the input on DeepSeek), so it
     // takes the full composer width and never overlaps the site's own controls.
     // The mount point is derived from each provider's composerFrame()+getEditor(),
     // or a provider can override it via barMount(). Returns {parent, before}.
@@ -6769,11 +7104,9 @@ function renderCards(panel) {
         return;
       }
 
-      // Preferred: in-flow mount inside the composer card — integrated look,
-      // full width of the chatbox, never floating detached.
+      // Preferred: in-flow mount inside the composer (no overlap, full width).
       const mount = computeBarMount();
       if (mount) {
-        bar.classList.remove("rs-bar-float");
         clearAnchorPad();
         if (bar.parentElement !== mount.parent || bar.nextElementSibling !== mount.before) {
           try { mount.parent.insertBefore(bar, mount.before || null); } catch {}
@@ -6782,25 +7115,9 @@ function renderCards(panel) {
           bar.classList.add("rs-bar-inline");
           bar.style.cssText = ""; // drop any leftover float positioning
         }
+        // Transparent (blends in) when mounted INSIDE the input box; surface card
+        // when mounted ABOVE it. The provider's barMount() signals which via .inside.
         bar.classList.toggle("rs-bar-inside", !!mount.inside);
-        // Widen the chatbox sides so the bar's pill row fits without overlapping
-        try {
-          const card = mount.parent;
-          if (card && card !== inlineWidenEl) {
-            if (inlineWidenEl && inlineWidenEl !== card) {
-              try { inlineWidenEl.style.maxWidth = ""; inlineWidenEl.style.width = ""; } catch {}
-            }
-            inlineWidenEl = card;
-            const w = card.getBoundingClientRect().width;
-            if (w && w < 800) {
-              if (!card.dataset.rsOrigMax) card.dataset.rsOrigMax = card.style.maxWidth || "";
-              card.style.maxWidth = "900px";
-              card.style.width = "100%";
-              card.style.marginLeft = "auto";
-              card.style.marginRight = "auto";
-            }
-          }
-        } catch {}
         bar.style.display = "flex";
         if (menuEl && !menuEl.hidden) {
           const br = bar.getBoundingClientRect();
@@ -6811,46 +7128,29 @@ function renderCards(panel) {
         return;
       }
 
-      // Anchored mode: provider's composer is framework-reconciled (Vue/Angular),
-      // so keep the bar in #rs-root and hug the anchor's top edge from outside.
-      // Clear any inline widening from a previous mount before anchoring.
-      if (inlineWidenEl) { try { inlineWidenEl.style.maxWidth = ""; inlineWidenEl.style.width = ""; } catch {} inlineWidenEl = null; }
+      // Anchored mode: the provider wants the integrated, in-composer LOOK but
+      // its composer is a framework-reconciled subtree we must NOT insert our
+      // node into (e.g. Kimi's Vue tree - inserting #rs-bar there makes Vue's
+      // next diff reuse the bar node as a host and nest the editor inside it).
+      // So we keep the bar in our own #rs-root, position it (position:fixed) to
+      // hug the composer's top edge at full width, and RESERVE that strip with
+      // padding-top on the composer so it reads as in-flow without ever becoming
+      // a child of the framework's DOM. barAnchor() returns the element to hug.
       const anchorEl = (P.barAnchor && P.barAnchor()) || null;
       if (anchorEl && anchorEl.isConnected) {
-        bar.classList.remove("rs-bar-inline", "rs-bar-inside", "rs-bar-float");
+        bar.classList.remove("rs-bar-inline", "rs-bar-inside");
         bar.classList.add("rs-bar-anchored");
         if (root && bar.parentElement !== root) root.appendChild(bar);
-        let r = anchorEl.getBoundingClientRect();
+        const r = anchorEl.getBoundingClientRect();
         if (!r.width) { bar.style.display = "none"; clearAnchorPad(); if (menuEl) menuEl.hidden = true; return; }
         bar.style.display = "flex";
         const bh = bar.offsetHeight || 34;
         if (anchorPadEl && anchorPadEl !== anchorEl) clearAnchorPad();
         anchorPadEl = anchorEl;
-        // Reserve the strip INSIDE the card so the bar reads as part of the chatbox
-        // and widen the card itself so the bar's pill row fits without overlapping
-        // the rounded sides (user request: "make the chatbox itself the sides larger").
-        anchorEl.style.paddingTop = (bh + 4) + "px";
-        try {
-          // Only widen if the card is narrower than needed for the bar (≈640px).
-          // 900px gives comfortable side breathing room on Gemini and other
-          // anchored composers without breaking centered layout.
-          const curMax = parseInt(getComputedStyle(anchorEl).maxWidth) || 0;
-          if (!anchorEl.dataset.rsOrigMax) anchorEl.dataset.rsOrigMax = anchorEl.style.maxWidth || "";
-          if (r.width < 800) {
-            anchorEl.style.maxWidth = "900px";
-            anchorEl.style.width = "100%";
-            anchorEl.style.marginLeft = "auto";
-            anchorEl.style.marginRight = "auto";
-            // Re-measure after widening so the bar hugs the new wider card
-            r = anchorEl.getBoundingClientRect();
-          } else if (curMax && curMax < 820) {
-            anchorEl.style.maxWidth = "900px";
-          }
-        } catch {}
+        anchorEl.style.paddingTop = (bh + 6) + "px"; // reserve the strip the bar sits in (+gap)
         bar.style.left = Math.round(r.left) + "px";
         bar.style.top = Math.round(r.top) + "px";
         bar.style.width = Math.round(r.width) + "px";
-        bar.style.borderRadius = "";
         if (menuEl && !menuEl.hidden) {
           bar.classList.remove("rs-bar-inline"); // ensure fixed geometry for menu math
           menuEl.style.right = Math.round(window.innerWidth - (r.left + r.width)) + "px";
@@ -6863,15 +7163,13 @@ function renderCards(panel) {
       clearAnchorPad();
 
       // Fallback: float just above the editor (fixed positioning), for sites
-      // where no clean inline mount could be resolved. Slim pill look —
-      // never a wide slab over the composer.
+      // where no clean inline mount could be resolved.
       if (bar.classList.contains("rs-bar-inline")) {
         bar.classList.remove("rs-bar-inline");
         if (root && bar.parentElement !== root) root.appendChild(bar);
       }
       const f = (P.getEditor && P.getEditor()) || (P.composerFrame && P.composerFrame());
       bar.style.display = "flex";
-      bar.classList.add("rs-bar-float");
       // No composer yet (or 0-width during layout): keep the bar on screen so
       // the agent is never "gone". Dock it to the bottom of the viewport.
       const r = f && f.isConnected ? f.getBoundingClientRect() : null;
@@ -6899,8 +7197,6 @@ function renderCards(panel) {
       }
     }
 
-    // Called by the core's sweep + after state changes: refresh the bar content.
-    // (Positioning runs continuously in placeBar; this only updates what's shown.)
     function updateStartGate() { renderBar(); }
 
     // Masks the input box while the extension types/sends, so the copied text
@@ -7456,7 +7752,7 @@ rsInterval(() => {
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type === "rs-status") {
-      ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, studioProc: msg.studioProc, robloxProc: msg.robloxProc, roblox_connected: msg.roblox_connected, engine: msg.engine, tools: msg.tools, servers: msg.servers, local_connected: msg.local_connected, local_full: msg.local_full, local_root: msg.local_root, blender: msg.blender, blender_shim: msg.blender_shim, blender_error: msg.blender_error });
+      ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, studioProc: msg.studioProc, robloxProc: msg.robloxProc, roblox_connected: msg.roblox_connected, engine: msg.engine, tools: msg.tools, servers: msg.servers, local_connected: msg.local_connected, local_full: msg.local_full, local_root: msg.local_root, blender: msg.blender, blender_shim: msg.blender_shim, blender_error: msg.blender_error, agent_version: msg.agent_version });
     }
     if (msg && msg.type === "rs-open-menu") {
       ui.openMenu(false); // from the popup's Settings button — opens at the top (Switch AI / custom prompt)

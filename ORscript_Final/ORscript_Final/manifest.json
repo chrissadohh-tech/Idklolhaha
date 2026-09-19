@@ -56,7 +56,7 @@
     "https://users.roblox.com/*"
   ],
   "content_security_policy": {
-    "extension_pages": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* http://localhost:* https://ollama.com https://*.ollama.com"
+    "extension_pages": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* http://localhost:* https://ollama.com https://*.ollama.com https:"
   },
   "background": {
     "service_worker": "background.js"

@@ -2385,7 +2385,7 @@ function api.web_search(a)
 	local body = ""
 	for _, ep in ipairs({ "https://html.duckduckgo.com/html/?q=", "https://lite.duckduckgo.com/lite/?q=" }) do
 		local ok, res = pcall(function()
-			return hs:RequestAsync({ Url = ep .. hs:UrlEncode(q), Method = "GET", Headers = { ["User-Agent"] = "RobloxScript/1.0 (+https://github.com/sebattfg/RobloxScript-Free)" } })
+			return hs:RequestAsync({ Url = ep .. hs:UrlEncode(q), Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", ["Accept-Language"] = "en-US,en;q=0.9" } })
 		end)
 		if ok and res.Success and res.Body and #res.Body > 0 then body = res.Body; break end
 	end
@@ -2881,7 +2881,7 @@ const SKILL_COMMANDS = [
   },
   {
     name: "web_search",
-    description: "Web search via DuckDuckGo HTML, returns top results as title+URL. Perfect for the AI to get a quick reference before building.",
+    description: "Web search (DuckDuckGo HTML, with the lite endpoint as fallback), returns top results as title+URL. Perfect for the AI to get a quick reference before building.",
     params: {
       query: { type: "string", req: true, desc: "search query, e.g. 'Roblox DataStore best practices'" },
       limit: { type: "number", req: false, desc: "max results 1-8, default 3" }

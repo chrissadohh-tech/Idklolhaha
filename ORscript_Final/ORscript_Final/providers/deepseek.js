@@ -5,7 +5,17 @@
 // exports. To support another AI site, write a sibling file exporting the same
 // interface and list it (instead of this one) in the manifest's content_scripts.
 //
-// DeepSeek notes (validated live):
+// DeepSeek notes (re-validated 2026-09 against the UNIFIED model UI):
+//  - THE MODEL PICKER IS GONE. DeepSeek merged its old Instant / Expert / Vision
+//    tabs into ONE unified model and removed the model selector from the
+//    composer. There is no model tab to force, sync, latch, or detect any more:
+//    every chat runs the unified model, which is multimodal (images and files
+//    are auto-detected and read) and picks its own reasoning depth per prompt.
+//    Historical conversations can still show an "Instant"/"Expert" badge, but
+//    that is a per-conversation legacy label, NOT a selectable mode - ignore it,
+//    and never gate anything (least of all screen_capture) on it.
+//  - Because the unified model accepts images everywhere, supportsVision is a
+//    plain `true` here (see the export at the bottom).
 //  - One turn = one .ds-message. User turns carry a hashed modifier class +
 //    a `.fbb737a4` bubble; assistant turns carry a `.ds-markdown` body.
 //  - DeepThink/R1 reasoning lives in .ds-think-content; the real answer is a
@@ -15,8 +25,8 @@
 //  - "generating" is detected from the primary footer button: while streaming it
 //    shows a STOP glyph (a <rect> in old builds, a rounded-square <path> starting
 //    "M2…" in V4) and when idle a SEND arrow (<path> starting "M8…"); see
-//    isStopBtn(). .ds-loading covers the brief spin-up. During the DeepThink
-//    REASONING phase there is NO stop button / spinner at all - only text growth
+//    isStopBtn(). .ds-loading covers the brief spin-up. During the REASONING
+//    phase there is NO stop button / spinner at all - only text growth
 //    says "still alive".
 // eslint-disable-next-line no-unused-vars
 const RSProvider = (() => {
@@ -46,13 +56,11 @@ const RSProvider = (() => {
     errorSurfaces:
       '[class*="ds-toast"],[class*="toast"],[class*="error"],[class*="alert"],' +
       '[class*="warning"],[class*="modal"],[role="alert"]',
-    // composer image-attachment area (best-effort; DeepSeek's image support is
-    // limited, so the attach path degrades gracefully if these don't match).
-    attachArea: ".ds-file-list, [class*='file-preview'], [class*='upload']",
-    imageThumb: "[class*='thumbnail'], [class*='file-item']",
-    // ── Composer mode controls (empty chat only) ──────────────────────────
-    modeRadioGroup: '[role="radiogroup"]',
-    modeRadio: '[role="radio"]',
+    // composer file/image attachments. DeepSeek's upload UI uses fully hashed
+    // classes (the old `.ds-file-list` / `[class*='thumbnail']` selectors matched
+    // NOTHING), so we key off the pending preview IMAGE itself - see attachThumbs.
+    attachArea: "[class*='file'], [class*='upload'], [class*='attach']",
+    // ── Composer toggles (no model tabs any more - see the header) ─────────
     deepThinkToggle: ".ds-toggle-button",
   };
 
@@ -76,8 +84,6 @@ const RSProvider = (() => {
     busy: /server is busy|serveur est occup|please try again|réessayer plus tard|system is currently busy/i,
     continueBtn: /^(continue|continuer|继续(生成)?|fortfahren|continuar|seguir|続行)$/i,
     stopped: /(arrêté|arrété|stopped|已停止|停止生成|已暂停)/i,
-    expertMode: /expert|专家|专业/i,
-    visionMode: /vision|视觉|图像|多模态/i,
     deepThink: /pensée profonde|pensee profonde|profonde|réflexion|reflexion|deep ?think|深度思考|r1/i,
     searchMode: /recherche intelligente|smart search|search|web|搜索/i,
   };
@@ -263,19 +269,20 @@ const RSProvider = (() => {
   const chatIsEmpty = () => allItems().length === 0;
 
   // A genuinely FRESH/new chat (not an existing conversation whose messages are
-  // still loading): DeepSeek only shows the Expert/Rapide mode selector on a
-  // brand-new empty chat.
+  // still loading). Kept as a distinct helper because the Start gate and the
+  // send hooks both treat a blank chat differently from a populated one.
   const isFreshChat = () => chatIsEmpty();
 
-  // The whole composer "box" = the smallest ancestor that contains the input, the
-  // send button AND (on a blank chat) the Expert/Rapide mode selector. The core's
-  // Start gate hides this entire frame at once. Returns null if no input yet.
+  // The whole composer "box" = the smallest ancestor that contains the input and
+  // the send button. The core's Start gate hides this entire frame at once.
+  // (Pre-2026-09 this also had to cover the Instant/Expert/Vision radio group;
+  // that selector is gone with the unified model - see the header.)
+  // Returns null if no input yet.
   function composerFrame() {
     const ta = getEditor();
     if (!ta) return null;
     const sb = getSendBtn();
-    const group = document.querySelector(S.modeRadioGroup);
-    const targets = [sb, group].filter(Boolean);
+    const targets = [sb].filter(Boolean);
     let n = ta;
     for (let i = 0; i < 14 && n && n.parentElement; i++) {
       if (targets.every((t) => n.contains(t))) return n;
@@ -289,31 +296,45 @@ const RSProvider = (() => {
 
   // Bar sits *above* the input box, not inside where you type.
   // The INPUT BOX = the lowest ancestor of the textarea that also holds the send
-  // button but NOT the model tabs (the rounded composer card). Putting the bar
+  // button (the rounded composer card; pre-2026-09 this check also excluded the
+  // model tabs, which the unified model removed). Putting the bar
   // inside it as first child made it cover the input padding and bleed into the
   // typing area. Instead anchor it right before the card in its parent, so it is
   // a clean header above the box — consistent with copilot/crax.
   // DeepSeek's React reconciles the input card; inserting #rs-bar inside it
   // risks a diff reuse. Use anchored mode — bar hugs the composer's top
   // edge from outside the DOM tree.
-  // DeepSeek is React-managed: any node we insert into the composer subtree
-  // gets fought over on every re-render (flicker/overlap). So use ANCHORED
-  // mode — the bar lives in our own #rs-root (position:fixed) and hugs the
-  // rounded chatbox's top edge from outside the DOM tree. React never sees it.
-  function barAnchor() {
+  // Where the core inserts its in-flow status bar. The INPUT BOX = the lowest
+  // ancestor of the textarea that also holds the send button.
+  // It is a flex column whose second child is the buttons row (send, web, DeepThink),
+  // so adding the bar as its FIRST child reflows cleanly and spans the full input width.
+  function barMount() {
     const ta = getEditor();
     if (!ta) return null;
-    for (let n = ta.parentElement, i = 0; n && n !== document.body && i < 8; i++, n = n.parentElement) {
-      try {
-        const r = parseFloat(getComputedStyle(n).borderTopLeftRadius) || 0;
-        if (r >= 12) return n;
-      } catch {}
+    const send = document.querySelector(S.sendBtn);
+    let box = ta.parentElement;
+    while (box && box !== document.body) {
+      const holdsSend = !send || box.contains(send);
+      if (holdsSend) break;
+      box = box.parentElement;
     }
-    return ta.closest("form") || ta.parentElement;
+    if (!box || box === document.body) box = ta.parentElement;
+    if (!box) return null;
+    // Insert before the first REAL child (skip our own bar if already mounted,
+    // otherwise we'd try to insert the bar before itself every frame).
+    let before = box.firstElementChild;
+    if (before && before.id === "rs-bar") before = before.nextElementSibling;
+    return { parent: box, before, inside: true }; // lives INSIDE the input box
   }
 
-  // ── Composer mode: pick Expert (most powerful) at startup, Search OFF ──
-  // Driven once at session start only; the user can switch the model tab after.
+  // ── Composer toggles: search OFF, legacy DeepThink ON ────────────────────
+  // There is NO model tab to drive any more: DeepSeek merged Instant / Expert /
+  // Vision into one unified model and deleted the composer's model picker (see
+  // the header). The only composer work left is best-effort housekeeping:
+  //   • Smart Search must be OFF - it derails the agent by injecting web pages
+  //     into the context.
+  //   • A legacy DeepThink/R1 toggle, if this build still renders one, goes ON.
+  // Both are optional: a build without those toggles is perfectly sendable.
   const nodeText = (n) => (n && (n.innerText || n.textContent || "").trim()) || "";
   const isPressedOn = (n) =>
     n && (n.getAttribute("aria-pressed") === "true" ||
@@ -323,108 +344,28 @@ const RSProvider = (() => {
     n && (n.getAttribute("aria-pressed") === "false" ||
           n.getAttribute("aria-checked") === "false");
 
-  // Model tabs carry data-model-type: "default" (Instant), "expert", "vision"
-  // (validated live 2026-07 on DeepSeek V4). Find one by type, falling back to a
-  // label regex if the site ever drops the attribute.
-  function findModeRadio(type, re) {
-    const group = document.querySelector(S.modeRadioGroup);
-    const radios = group ? [...group.querySelectorAll(S.modeRadio)] : [...document.querySelectorAll(S.modeRadio)];
-    return radios.find((r) => r.getAttribute("data-model-type") === type) ||
-           (re && radios.find((r) => re.test(nodeText(r)))) ||
-           null;
-  }
-  const findExpertRadio = () => findModeRadio("expert", RE.expertMode);
-  const findVisionRadio = () => findModeRadio("vision", RE.visionMode);
-  const radioOn = (r) => !!r && r.getAttribute("aria-checked") === "true";
-
-  // The user can CHOOSE the Vision tab; when they do we respect it (never force
-  // Expert over it) and enable image tools - see supportsVision (getter) and
-  // enforceComposer's expert-force guard.
-  //
-  // CRITICAL detection wrinkle (validated live 2026-07): once a conversation is
-  // active DeepSeek REMOVES the model radiogroup from the DOM entirely, so reading
-  // the radio live returns "no Vision" mid-conversation and screen_capture would be
-  // re-blocked after the first message. The model CANNOT change mid-conversation
-  // (radios are gone), so we LATCH the selection from the last time the radios were
-  // visible. And after a reload mid-conversation the radios were never seen, so we
-  // fall back to DeepSeek's per-turn model BADGE (a small element whose exact text
-  // is "Instant"/"Expert"/"Vision"). Throttled + latched so the badge scan stops
-  // once a value is known.
-  let _visLatch = false, _visLatchSet = false, _visAt = 0, _visCache = false;
-  function badgeVision() {
-    const els = [...document.querySelectorAll("div,span")].filter(
-      (e) => e.childElementCount === 0 &&
-             /^(instant|expert|vision)$/i.test((e.textContent || "").trim()) &&
-             e.getBoundingClientRect().width > 0);        // skip the 0x0 hidden dup
-    if (!els.length) return null;
-    // Prefer the persistent TOP-LEFT header badge (smallest `top`): it names the
-    // CURRENT conversation's model and survives chat switches.
-    els.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-    return /vision/i.test(els[0].textContent || "");
-  }
-  function detectVision() {
-    const now = Date.now();
-    if (now - _visAt < 400) return _visCache;      // throttle the DOM work
-    _visAt = now;
-    const group = document.querySelector(S.modeRadioGroup);
-    if (group) {                                   // radios visible → authoritative
-      const v = findVisionRadio();
-      if (v) { _visLatch = radioOn(v); _visLatchSet = true; return (_visCache = _visLatch); }
-    }
-    // Active conversation (radios gone): the per-conversation header BADGE is
-    // authoritative and must WIN over the latch. The latch holds the last composer
-    // selection, which belongs to a DIFFERENT chat after a switch - so trusting it
-    // first made a Vision conv read as non-Vision on revisit (screen_capture
-    // wrongly "unavailable", 25 tools). Badge → latch → false.
-    const b = badgeVision();
-    if (b != null) { _visLatch = b; _visLatchSet = true; return (_visCache = b); }
-    if (_visLatchSet) return (_visCache = _visLatch);
-    return (_visCache = false);
-  }
-  const isVisionSelected = () => detectVision();
-
   function findToggleBy(re) {
     return [...document.querySelectorAll(S.deepThinkToggle)].find((t) => re.test(nodeText(t))) || null;
   }
 
+  // READ-ONLY state probe (no clicks). Kept for diagnostics + the ready loop.
   function composerModeState() {
-    const expert = findExpertRadio();
     const deepThink = findToggleBy(RE.deepThink);
     const search = findToggleBy(RE.searchMode);
-    const vision = findVisionRadio();
     return {
-      expertFound: !!expert,
-      expertOn: radioOn(expert),
-      visionFound: !!vision,
-      visionOn: radioOn(vision),
       deepThinkFound: !!deepThink,
       deepThinkOn: !!deepThink && isPressedOn(deepThink),
       searchFound: !!search,
       searchOff: !search || !isPressedOn(search),
-      searchHiddenInExpert: !search && !!expert && expert.getAttribute("aria-checked") === "true",
     };
   }
 
   function enforceComposer(reason) {
     // We only DRIVE the composer when given a reason (i.e. at session startup).
-    // Per-sweep calls pass no reason and are READ-ONLY: that leaves the user free
-    // to switch the model tab afterwards (e.g. Expert → Instant to turn thinking
-    // off) without OR reverting their choice every frame.
+    // Per-sweep calls pass no reason and are READ-ONLY: that leaves the user in
+    // full control of their composer afterwards, with no per-frame click wars.
     if (!reason) return composerModeState();
     try {
-      // Pick the most powerful model for the agent: Expert (deep reasoning). In
-      // the current DeepSeek V4 UI, Expert IS the thinking model; the three tabs
-      // are Instant / Expert / Vision and there is no separate DeepThink toggle.
-      // EXCEPTION: if the user deliberately chose the Vision tab, RESPECT it (don't
-      // force Expert back) - that's the only way to feed DeepSeek images, and
-      // supportsVision then flips true so screen_capture is allowed for that turn.
-      if (!isVisionSelected()) {
-        const expert = findExpertRadio();
-        if (expert && expert.getAttribute("aria-checked") !== "true") {
-          try { expert.click(); } catch (e) { diag("mode_fallback", { reason, target: "expert", error: String(e && e.message || e) }); }
-        }
-      }
-
       // Legacy DeepSeek UI only: if a separate DeepThink toggle still exists, turn
       // it ON once. We do NOT hide it anymore, so thinking stays user-toggleable.
       const deepThink = findToggleBy(RE.deepThink);
@@ -432,7 +373,7 @@ const RSProvider = (() => {
         try { deepThink.click(); } catch (e) { diag("mode_fallback", { reason, target: "deepThink", error: String(e && e.message || e) }); }
       }
 
-      // Search must be off (it derails the agent). Best-effort; absent in Expert.
+      // Search must be off (it derails the agent). Best-effort; absent in some builds.
       const search = findToggleBy(RE.searchMode);
       if (search && isPressedOn(search)) {
         try { search.click(); } catch (e) { diag("mode_fallback", { reason, target: "search", error: String(e && e.message || e) }); }
@@ -447,23 +388,21 @@ const RSProvider = (() => {
     }
   }
 
-  // Drive the composer into its required modes; returns the final state with
-  // `.ready` (the core gates session start on it).
+  // Drive the composer's best-effort toggles and wait for the chat box to appear.
+  // Returns the final state with `.ready` (the core gates session start on it).
+  // NOTE: "ready" is ONLY about the composer existing. It must never depend on a
+  // model name or tab - the unified model is always the right model.
   async function ensureComposerReady(reason) {
     let state = composerModeState();
     for (let i = 0; i < 12; i++) {
       state = enforceComposer(reason);
-      // Ready as soon as the agent model is on (Expert, OR Vision if the user
-      // chose it) and Search is off. DeepThink is only required if a legacy toggle
-      // is actually present (V4 has none).
-      if ((state.expertOn || state.visionOn) && state.searchOff && (state.deepThinkOn || !state.deepThinkFound)) break;
+      if (getEditor() && state.searchOff && (state.deepThinkOn || !state.deepThinkFound)) break;
       await sleep(120);
     }
     state = composerModeState();
     diag("mode_ready", { reason, ...state });
-    // Best-effort Expert click already ran. Never block Start on a tab name —
-    // Instant / Expert / Vision / any future model all work with the agent.
-    // (A missing composer is the only real "not ready".)
+    // Search/DeepThink are best-effort, so a missing composer is the only real
+    // "not ready". (main.js shows its own "chat box not found" banner then.)
     const ready = !!getEditor();
     return { ...state, ready };
   }
@@ -989,12 +928,12 @@ const RSProvider = (() => {
   return {
     id: "deepseek",
     displayName: "DeepSeek",
-    // DYNAMIC: DeepSeek's Instant/Expert models are text-only, but the V4 UI has a
-    // dedicated "Vision" model tab. When the user selects Vision we honour it (see
-    // enforceComposer) and this getter flips true, so main.js stops blocking
-    // screen_capture and stops turning returned images into errors. Any other tab →
-    // false. A getter so a mid-session tab switch is reflected immediately.
-    get supportsVision() { return isVisionSelected(); },
+    // UNCONDITIONAL true. DeepSeek's unified model (2026-09) is multimodal: it
+    // reads images - and files - in every chat, with no Vision tab to select.
+    // This lets main.js allow screen_capture on DeepSeek and stop turning
+    // returned images into errors. (Before the merge this was a getter that read
+    // the Instant/Expert/Vision tab; that tab no longer exists.)
+    supportsVision: true,
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible
     // probes can exclude it: DeepSeek QUOTES the command JSON/###LUA### inside
@@ -1007,14 +946,15 @@ const RSProvider = (() => {
       // Version beacon: stamp the loaded build onto <html> so a reload can be
       // confirmed from the page (read document.documentElement.dataset.rsDsVer).
       // BUMP DS_VER on meaningful deepseek.js changes worth verifying live.
-      try { document.documentElement.setAttribute("data-rs-ds-ver", "2026-09_new-ui"); } catch {}
+      // 2026-09_unified = Instant/Expert/Vision merged + picker removed.
+      try { document.documentElement.setAttribute("data-rs-ds-ver", "2026-09_unified"); } catch {}
     },
     // turns
     allItems, isUserItem, isAssistantItem, itemText, classifyText,
     assistantCount, userCount, lastAssistant, lastAssistantId, itemKey, readAssistant,
     streamLen, snapshot,
     // composer / state
-    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barAnchor,
+    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount,
     setInputLock, typeAndSend, stopGeneration,
     isGenerating, isBusyNow, isHardGenerating, genDebug,
     enforceComposer, ensureComposerReady,

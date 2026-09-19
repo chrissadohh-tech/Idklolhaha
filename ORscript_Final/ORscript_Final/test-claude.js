@@ -37,7 +37,7 @@ ok("bar stays on screen without a composer", main.includes("keep the bar on scre
 ok("Start is not gated on a Claude family", claude.includes("any of them is fine") && claude.includes("const ready = !!ed"));
 ok("banner is not a fake model-switch", !main.includes("into the right mode"));
 const ds = fs.readFileSync(path.join(root, "providers/deepseek.js"), "utf8");
-ok("DeepSeek Start is not blocked on Expert", ds.includes("const ready = !!getEditor()"));
+ok("DeepSeek Start is not blocked on a model tab", ds.includes("const ready = !!getEditor()") && !/findExpertRadio|expertFound|_visLatch/.test(ds));
 
 if (process.exitCode) {
   console.log("\nSome Claude checks failed.");
