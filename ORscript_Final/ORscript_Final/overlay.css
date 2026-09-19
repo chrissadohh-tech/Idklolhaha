@@ -5362,3 +5362,15 @@ html.rs-light #rs-cards-rng:hover {
 .rs-ref-replace-btn:hover { text-decoration: underline; }
 .rs-ref-remove-btn { color: #ef4444; }
 .rs-ref-remove-btn:hover { text-decoration: underline; }
+
+.rs-vref-toggle-btn {
+  margin-left: auto; padding: 2px 8px; font-size: 10px; font-weight: 700;
+  border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.15s ease;
+}
+.rs-vref-toggle-btn.on {
+  background: rgba(52, 211, 153, 0.15); border-color: rgba(52, 211, 153, 0.35); color: #34d399;
+}
+.rs-vref-toggle-btn.off {
+  background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.12); color: #9ca3af;
+}
+.rs-vref-toggle-btn:hover { filter: brightness(1.15); }

@@ -1043,7 +1043,7 @@ async function connectBlender() {
       blenderMode = "mcp";
       setBlender(true, "");
       try {
-        const ping = await blenderCall("get_scene_info", {}, 20000);
+        const ping = await blenderCall("get_scene_info", { user_prompt: "inspect scene" }, 20000);
         if (ping && ping.ok === false) {
           setBlender(false, ping.error);           // server up, Blender addon not
           broadcastStatus();
@@ -1069,7 +1069,7 @@ async function connectBlender() {
   blenderMode = "tcp";
   setBlender(true, "");
   try {
-    const ping = await blenderCall("get_scene_info", {}, 20000);
+    const ping = await blenderCall("get_scene_info", { user_prompt: "inspect scene" }, 20000);
     if (ping && ping.ok === false && /not listening|closed|refused|10061|Connection refused/i.test(String(ping.error || ""))) {
       setBlender(false, ping.error);
       broadcastStatus();
@@ -1293,7 +1293,11 @@ async function blenderCall(name, args, timeout) {
     // path, so nothing that worked before stops working.
     const bareM = String(name || "").split("/").pop().split(".").pop();
     if (blenderMode === "mcp" && BLENDER_MCP_TOOLS.has(bareM)) {
-      const r = await send({ type: "call_tool", name: bareM, arguments: args || {}, timeout: timeout || 120000 }, (timeout || 120000) + 10000);
+      const mcpArgs = Object.assign({}, args || {});
+      if (!mcpArgs.user_prompt && (bareM === "get_scene_info" || bareM === "get_object_info")) {
+        mcpArgs.user_prompt = "inspect scene";
+      }
+      const r = await send({ type: "call_tool", name: bareM, arguments: mcpArgs, timeout: timeout || 120000 }, (timeout || 120000) + 10000);
       if (r && r.ok) return { ok: true, text: String(r.text || ""), images: r.images || [] };
       if (r && r.kind !== "disconnected") return { ok: false, error: String((r && r.error) || "blender MCP call failed") };
       // Bridge down: fall through to the direct socket rather than dead-ending.

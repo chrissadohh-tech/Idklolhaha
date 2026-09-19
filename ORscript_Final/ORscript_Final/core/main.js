@@ -4971,8 +4971,13 @@
           </section>
             
                     <section class="rs-menu-sec" id="rs-vref-sec">
-            <div class="rs-sec-label"><span>Visual Reference Target</span></div>
-            <div class="rs-menu-note">Set a reference image and target mode. The AI calculates strict mathematical proportions, UDim2 ratios, and alignments.</div>
+            <div class="rs-sec-label">
+              <span>Visual Reference Target</span>
+              <button type="button" class="rs-vref-toggle-btn ${visualRef.enabled !== false ? "on" : "off"}" id="rs-vref-toggle">
+                ${visualRef.enabled !== false ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+            <div class="rs-menu-note">Set a reference image and target mode. When enabled, the AI calculates strict mathematical proportions, UDim2 ratios, and alignments.</div>
             
             <div class="rs-ref-mode-row">
               <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "gui" ? "on" : ""}" id="rs-ref-mode-gui" title="Reference for GUI (HUDs, Menus, Inventory, Frames)">
@@ -5130,6 +5135,13 @@
       if (refModeBuildBtn) refModeBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
 
       // ── Visual Reference settings events ──
+      const refToggleBtn = menuEl.querySelector("#rs-vref-toggle");
+      if (refToggleBtn) {
+        refToggleBtn.addEventListener("click", () => {
+          const next = visualRef.enabled === false ? true : false;
+          setVisualRefEnabled(next);
+        });
+      }
       const refGuiBtn = menuEl.querySelector("#rs-ref-mode-gui");
       const refBuildBtn = menuEl.querySelector("#rs-ref-mode-build");
       if (refGuiBtn) refGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
@@ -5806,6 +5818,14 @@ let cardsUiStyle = "modern";
       try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
       buildMenu();
       toast("Visual reference cleared");
+    }
+
+    function setVisualRefEnabled(on) {
+      visualRef.enabled = !!on;
+      try { window.__rsVisualRef = () => visualRef; } catch {}
+      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
+      buildMenu();
+      toast("Visual Reference " + (visualRef.enabled ? "Enabled" : "Disabled"));
     }
 
     function setVisualRefMode(mode) {

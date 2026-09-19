@@ -394,7 +394,7 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
     let visualRefDirective = "";
     try {
       const vRef = (typeof window !== "undefined" && typeof window.__rsVisualRef === "function") ? window.__rsVisualRef() : null;
-      if (vRef && vRef.active) {
+      if (vRef && vRef.active && vRef.enabled !== false) {
         const mode = vRef.mode === "build" ? "BUILD / 3D MODEL" : "GUI (GRAPHICAL USER INTERFACE)";
         visualRefDirective = `\n\n━━━ PERSISTENT VISUAL REFERENCE: ${mode} ━━━\n` +
           `A visual reference target has been designated by the user in Settings as the active standard for this ${mode}.\n` +
