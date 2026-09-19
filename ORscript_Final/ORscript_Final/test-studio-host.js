@@ -341,5 +341,23 @@ ok("System prompt enforces universal mobile and cross-platform support",
   cfgJS.includes("ContextActionService:BindAction") &&
   cfgJS.includes("MOBILE & CROSS-PLATFORM: all UI and controls must work on mobile"));
 
+// ── Tweak Mode & Stud Build Knowledge Base ────────────────────────────────
+ok("System prompt contains comprehensive Roblox Stud Build knowledge base",
+  cfgJS.includes("ROBLOX STUD BUILD & RETRO AESTHETIC SPECIFICATION:") &&
+  cfgJS.includes("UNYIELDING SPATIAL GRID") &&
+  cfgJS.includes("HIERARCHICAL PRIMITIVE DECOMPOSITION") &&
+  cfgJS.includes("SURFACE TEXTURE MANIPULATION") &&
+  cfgJS.includes("LOW-FIDELITY MATERIAL & PALETTE"));
+
+ok("Settings has Tweak Mode toggle row in Agent Modes",
+  mainJS.includes('data-mode="tweakmode"') &&
+  mainJS.includes("Tweak Mode (Rule Reinforcement)") &&
+  mainJS.includes("setTweakMode"));
+
+ok("Tweak Mode is persisted in storage and forces prompt re-statement",
+  mainJS.includes("chrome.storage.local.set({ rsTweakMode: tweakMode })") &&
+  mainJS.includes("A.forceSysResend = true") &&
+  cfgJS.includes("TWEAK MODE ACTIVE (RULES RE-STATEMENT & RIGOROUS ENFORCEMENT)"));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);

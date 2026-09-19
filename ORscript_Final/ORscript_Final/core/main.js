@@ -3109,7 +3109,7 @@
     if (A.forceSysResend) return true;   // mode toggled (Forge/Extra) — restate NOW
     if (!RESEND_SYS_EVERY) return false;
     const { users, results } = sinceLastSys();
-    const due = users >= RESEND_SYS_EVERY || results >= RESEND_SYS_EVERY_RESULTS;
+    const due = (tweakMode && results >= 3) || users >= RESEND_SYS_EVERY || results >= RESEND_SYS_EVERY_RESULTS;
     // Logged sparsely on purpose: this is consulted on EVERY tool result, and an
     // entry each time would flush the 300-slot diag ring of everything else -
     // exactly the history you need when something goes wrong. The verdict turn
@@ -4308,7 +4308,7 @@
     };
     try { window.__rsVisualRef = () => visualRef; } catch {}
 
-    let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false;
+    let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false, tweakMode = false;
     let diagDebug = "off"; // "off" | "basic" | "detailed" | "trace"
     try { window.__rsDiagDebug = () => diagDebug; } catch {}
     let workMode = "balanced";
@@ -4316,8 +4316,9 @@
     try { window.__rsPlanMode = () => planMode; } catch {}
     try { window.__rsAutoDebug = () => autoDebugEnabled; } catch {}
     try { window.__rsMultiAgent = () => multiAgent; } catch {}
+    try { window.__rsTweakMode = () => tweakMode; } catch {}
     try {
-      chrome.storage.local.get(["rs-shot-max", "rs-shot-quality", "rsShotFast", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsThinkingLevel", "rsSounds", "rsBgMode", "rsAutoDebug", "rsMultiAgent", "rsDiagDebug"], (r) => {
+      chrome.storage.local.get(["rs-shot-max", "rs-shot-quality", "rsShotFast", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsThinkingLevel", "rsSounds", "rsBgMode", "rsAutoDebug", "rsMultiAgent", "rsTweakMode", "rsDiagDebug"], (r) => {
         if (!r) return;
         // rs-shot-max is the single source of truth (0 = send originals).
         {
@@ -4346,6 +4347,7 @@
         if (typeof r.rsMultiAgent === "boolean") {
           multiAgent = r.rsMultiAgent;
           try { window.__rsMultiAgent = () => multiAgent; } catch {}
+    try { window.__rsTweakMode = () => tweakMode; } catch {}
         }
         if (typeof r.rsForgeMode === "boolean") {
           forgeMode = r.rsForgeMode;
@@ -4401,6 +4403,7 @@
         if (changes.rsMultiAgent && typeof changes.rsMultiAgent.newValue === "boolean") {
           multiAgent = changes.rsMultiAgent.newValue;
           try { window.__rsMultiAgent = () => multiAgent; } catch {}
+    try { window.__rsTweakMode = () => tweakMode; } catch {}
           dirty = true;
         }
         if (changes.rsForgeMode && typeof changes.rsForgeMode.newValue === "boolean") {
@@ -4573,6 +4576,15 @@
     function setPlanMode(v){ planMode=!!v; try{chrome.storage.local.set({rsPlanMode: planMode});}catch{}; try{ window.__rsPlanMode = () => planMode; }catch{}; buildMenu(); renderBar(); toast(v ? "Plan mode on — the AI writes a plan, then production code" : "Plan mode off"); markModesChanged(); }
     function setAutoDebug(v){ autoDebugEnabled=!!v; try{chrome.storage.local.set({rsAutoDebug: autoDebugEnabled});}catch{}; try{ window.__rsAutoDebug = () => autoDebugEnabled; }catch{}; buildMenu(); toast(v ? "Automatic Debugger on — new Studio errors are sent to the AI" : "Automatic Debugger off"); markModesChanged(); }
     function setMultiAgent(v){ multiAgent=!!v; try{chrome.storage.local.set({rsMultiAgent: multiAgent});}catch{}; try{ window.__rsMultiAgent = () => multiAgent; }catch{}; buildMenu(); toast(v ? "Multi-Agent on — planner, builder, reviewer, debugger" : "Multi-Agent off"); markModesChanged(); }
+    function setTweakMode(v) {
+      tweakMode = !!v;
+      try { chrome.storage.local.set({ rsTweakMode: tweakMode }); } catch {}
+      try { window.__rsTweakMode = () => tweakMode; } catch {}
+      A.forceSysResend = true;
+      buildMenu();
+      toast(v ? "Tweak Mode (Rule Reinforcement) on" : "Tweak Mode off");
+      markModesChanged();
+    }
     function setForgeMode(v){ forgeMode=!!v; try{chrome.storage.local.set({rsForgeMode: forgeMode});}catch{}; try{ document.documentElement.setAttribute("data-rs-forge", forgeMode?"1":"0"); window.__rsForge = () => forgeMode; }catch{}; buildMenu(); markModesChanged(); }
     // Toggling a mode mid-session must reach the AI on the NEXT turn, not ~12
     // results later: force the full system prompt (which now carries the
@@ -4955,6 +4967,11 @@
               <span class="rs-tgl-sub">Planner → builder → reviewer → debugger. Call or_agent to hand off.</span></span>
               <span class="rs-tgl ${multiAgent ? "on" : ""}"></span>
             </div>
+            <div class="rs-tgl-row" data-mode="tweakmode" role="switch" aria-checked="${tweakMode}" tabindex="0">
+              <span class="rs-tgl-info"><span class="rs-tgl-name">Tweak Mode (Rule Reinforcement)</span>
+              <span class="rs-tgl-sub">Continuously reminds and enforces core rules (mathematics, strict Luau, server authority, memory cleanup, mobile support) on repeated long prompts.</span></span>
+              <span class="rs-tgl ${tweakMode ? "on" : ""}"></span>
+            </div>
             <div class="rs-tgl-row" data-mode="sounds" role="switch" aria-checked="${soundOn}" tabindex="0">
               <span class="rs-tgl-info"><span class="rs-tgl-name">Sound effects</span>
               <span class="rs-tgl-sub">Chime when the agent starts, finishes, or errors.</span></span>
@@ -5119,6 +5136,7 @@
           else if(m==="plan") setPlanMode(!planMode);
           else if(m==="autodebug") setAutoDebug(!autoDebugEnabled);
           else if(m==="multiagent") setMultiAgent(!multiAgent);
+          else if(m==="tweakmode") setTweakMode(!tweakMode);
           else if(m==="fastshots") setShotFast(!shotFast);
           else if(m==="sounds") { setSounds(!soundOn); try { buildMenu(); toast(soundOn ? "Sound effects on" : "Sound effects off"); if (soundOn) playSfx("ok"); } catch {} }
         };
