@@ -3924,7 +3924,6 @@
           </div>
         </div>
         <div id="rs-cards-panel" hidden></div>
-        </div>
         <div id="rs-menu" hidden></div>
         <div id="rs-approve" hidden>
           <div class="rs-approve-card">

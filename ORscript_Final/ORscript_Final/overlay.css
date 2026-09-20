@@ -5375,27 +5375,31 @@ html.rs-light #rs-cards-rng:hover {
 }
 .rs-vref-toggle-btn:hover { filter: brightness(1.15); }
 
-/* ── Settings Menu Tabs (Figma Connect) ── */
+/* ── Settings Menu Tabs (Figma Connect) — Fitted strictly within #rs-menu ── */
 .rs-menu-tabs-bar {
   display: flex;
   gap: 4px;
-  padding: 8px 12px 6px;
+  padding: 6px 8px 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   background: rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+  width: 100%;
 }
 .rs-menu-tab-btn {
   flex: 1;
-  padding: 6px 10px;
-  font-size: 11.5px;
+  padding: 5px 8px;
+  font-size: 11px;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   border: 1px solid transparent;
   color: #94a3b8;
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: center;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 .rs-menu-tab-btn:hover {
   color: #f1f5f9;
@@ -5410,6 +5414,8 @@ html.rs-light #rs-cards-rng:hover {
   display: none;
   box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 .rs-tab-page.active {
   display: block;
@@ -5419,17 +5425,19 @@ html.rs-light #rs-cards-rng:hover {
 .rs-figma-box {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 10px;
-  margin-top: 8px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 6px;
   box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
 }
 .rs-figma-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
 }
 .rs-figma-status-indicator {
   display: flex;
@@ -5437,33 +5445,36 @@ html.rs-light #rs-cards-rng:hover {
   gap: 6px;
 }
 .rs-figma-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #ef4444;
+  flex-shrink: 0;
 }
 .rs-figma-dot.on {
   background: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
 }
 .rs-figma-status-text {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: #e2e8f0;
 }
 .rs-figma-port {
-  font-size: 10px;
+  font-size: 9.5px;
   color: #64748b;
   font-family: monospace;
 }
 .rs-figma-btn-group {
   display: flex;
   gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
 }
 .rs-figma-tab-btn {
   flex: 1;
-  padding: 6px 10px;
-  font-size: 11px;
+  padding: 5px 8px;
+  font-size: 10.5px;
   font-weight: 600;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -5471,6 +5482,8 @@ html.rs-light #rs-cards-rng:hover {
   color: #f1f5f9;
   cursor: pointer;
   transition: all 0.15s ease;
+  box-sizing: border-box;
+  text-align: center;
 }
 .rs-figma-tab-btn:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -5488,35 +5501,39 @@ html.rs-light #rs-cards-rng:hover {
 .rs-figma-steps {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 5px;
+  margin-top: 5px;
+  box-sizing: border-box;
+  width: 100%;
 }
 .rs-figma-step {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 11px;
+  gap: 6px;
+  font-size: 10px;
   color: #94a3b8;
-  line-height: 1.4;
+  line-height: 1.35;
   background: rgba(0, 0, 0, 0.2);
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-radius: 6px;
   box-sizing: border-box;
+  width: 100%;
 }
 .rs-figma-step code {
-  font-size: 10px;
+  font-size: 9px;
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.1);
-  padding: 1px 4px;
+  padding: 1px 3px;
   border-radius: 3px;
+  word-break: break-all;
 }
 .rs-step-num {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 800;
   background: rgba(255, 255, 255, 0.1);
   color: #cbd5e1;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5527,10 +5544,11 @@ html.rs-light #rs-cards-rng:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11px;
+  font-size: 10px;
   color: #cbd5e1;
-  padding: 4px 0;
+  padding: 2px 0;
+  box-sizing: border-box;
 }
 .rs-feat-item {
-  line-height: 1.45;
+  line-height: 1.35;
 }
