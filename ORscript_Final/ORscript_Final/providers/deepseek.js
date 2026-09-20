@@ -170,27 +170,15 @@ const RSProvider = (() => {
   // send hooks and letting them swallow the DeepSeek "Log in" click (which is
   // itself a .ds-button--primary, the same selector as the send button).
   const getEditor = () => {
-    // Collect all textareas on the page, excluding our own injected UI and sidebars/navigation
-    const all = [...document.querySelectorAll("textarea")].filter((e) => {
-      if (e.closest("#rs-root")) return false;
-      if (e.closest("aside") || e.closest("nav") || e.closest("[class*='sidebar']")) return false;
-      if (e.closest(S.msgEditBox)) return false;
-      return true;
-    });
-
-    if (!all.length) return null;
-
-    // Filter to visible candidates
-    const visible = all.filter((e) => {
-      const r = e.getBoundingClientRect();
-      return r.width > 120 && r.height > 15 && r.top < window.innerHeight;
-    });
-
-    const pool = visible.length ? visible : all;
-
-    // Sort bottom-most first: the chat composer is always at the bottom of the screen
-    pool.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
-    return pool[0];
+    const site = [...document.querySelectorAll(S.editor)].filter(
+      (e) => !e.closest("#rs-root")
+    );
+    // Prefer the bottom composer over the inline message-EDIT box. When the user
+    // edits a turn, DeepSeek mounts a bordered .ds-textarea up in the turn list;
+    // it precedes the composer in DOM order, so the old "first textarea" pick
+    // returned it - and barMount() then dragged the whole OR bar INTO the
+    // editor. Skip any textarea inside that DS component; the composer isn't one.
+    return site.find((e) => !e.closest(S.msgEditBox)) || site[0] || null;
   };
   // Composer may be a <textarea> (classic) or contenteditable (2026 UI).
   const editorText = () => {
@@ -316,24 +304,23 @@ const RSProvider = (() => {
   // ancestor of the textarea that also holds the send button.
   // It is a flex column whose second child is the buttons row (send, web, DeepThink),
   // so adding the bar as its FIRST child reflows cleanly and spans the full input width.
-function barMount() {
+  function barMount() {
     const ta = getEditor();
     if (!ta) return null;
     const send = getSendBtn() || document.querySelector(S.sendBtn);
     let box = ta.parentElement;
     while (box && box !== document.body) {
       const holdsSend = !send || box.contains(send);
-      const r = box.getBoundingClientRect();
-      if (holdsSend && r.width > 280 && r.height > 35) {
-        break;
-      }
+      if (holdsSend) break; // the input box
       box = box.parentElement;
     }
     if (!box || box === document.body) box = ta.parentElement;
     if (!box) return null;
+    // Insert before the first REAL child (skip our own bar if already mounted,
+    // otherwise we'd try to insert the bar before itself every frame).
     let before = box.firstElementChild;
     if (before && before.id === "rs-bar") before = before.nextElementSibling;
-    return { parent: box, before, inside: true };
+    return { parent: box, before, inside: true }; // lives INSIDE the input box
   }
 
   // ── Composer toggles: search OFF, legacy DeepThink ON ────────────────────
