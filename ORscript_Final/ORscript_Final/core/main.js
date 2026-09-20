@@ -4980,11 +4980,6 @@
           </section>
           <section class="rs-menu-sec">
             <div class="rs-sec-label"><span>Captures</span></div>
-                        <div class="rs-tgl-row" data-mode="figmabridge" role="switch" aria-checked="${figmaConnected()}" tabindex="0">
-              <span class="rs-tgl-info"><span class="rs-tgl-name">Figma Bridge</span>
-              <span class="rs-tgl-sub">${figmaConnected() ? "Connected (Port 9878) — AI builds in Figma & auto-exports to Studio" : "Connect companion plugin in Figma (Plugins → Development → OR Figma Bridge)"}</span></span>
-              <span class="rs-tgl-sw"></span>
-            </div>
             <div class="rs-tgl-row" data-mode="fastshots" role="switch" aria-checked="${shotFast}" tabindex="0">
               <span class="rs-tgl-info"><span class="rs-tgl-name">Fast screenshots</span>
               <span class="rs-tgl-sub">Resize captures over 350 KB to 1400 px before upload — a screenshot arrives much quicker, still readable. Off = full-size originals.</span></span>
@@ -5142,31 +5137,7 @@
           else if(m==="autodebug") setAutoDebug(!autoDebugEnabled);
           else if(m==="multiagent") setMultiAgent(!multiAgent);
           else if(m==="tweakmode") setTweakMode(!tweakMode);
-          else if(m==="figmabridge") {
-            if (!figmaConnectedCached) {
-              toast("Connecting to Figma on port 9878…");
-              bg({ type: "figma_connect" }).then((r) => {
-                if (r && r.ok) {
-                  figmaConnectedCached = true;
-                  try { chrome.storage.local.set({ rsFigmaConnected: true }); } catch {}
-                  toast("Figma bridge connected! AI can now build in Figma and auto-export to Studio");
-                  playSfx("ok");
-                } else {
-                  toast("Could not reach Figma on port 9878. Make sure OR Figma Bridge plugin is running in Figma.");
-                  playSfx("error");
-                }
-                buildMenu();
-              });
-            } else {
-              bg({ type: "figma_disconnect" }).then(() => {
-                figmaConnectedCached = false;
-                try { chrome.storage.local.set({ rsFigmaConnected: false }); } catch {}
-                toast("Figma bridge disconnected");
-                playSfx("ok");
-                buildMenu();
-              });
-            }
-          } else if(m==="fastshots") setShotFast(!shotFast);
+          else if(m==="fastshots") setShotFast(!shotFast);
           else if(m==="sounds") { setSounds(!soundOn); try { buildMenu(); toast(soundOn ? "Sound effects on" : "Sound effects off"); if (soundOn) playSfx("ok"); } catch {} }
         };
         btn.addEventListener("click", flip);
