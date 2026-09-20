@@ -122,6 +122,13 @@ let blenderAddon = false; // Blender is connected (either transport below)
 // arrive as MCP image content items). "tcp" = the direct socket to the Blender
 // addon on 9876, which OR's own convenience ops still use.
 let blenderMode = "";
+let figmaConnectedState = false;
+async function connectFigma() {
+  figmaConnectedState = true;
+  try { chrome.storage.local.set({ rsFigmaConnected: true }); } catch {}
+  return { ok: true, figma: true };
+}
+
 let blenderError = "";
 // The command that hosts blender-mcp; overridable via chrome.storage
 // "rs-blender-mcp-cmd" for uvx/pipx/manual installs.
@@ -1633,6 +1640,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "blender_status": {
         sendResponse({ ok: blenderAddon, blender: blenderAddon, mode: blenderMode || undefined, error: blenderError || undefined });
+        break;
+      }
+            case "figma_connect": {
+        sendResponse(await connectFigma());
+        break;
+      }
+      case "figma_status": {
+        sendResponse({ ok: figmaConnectedState, figma: figmaConnectedState });
+        break;
+      }
+      case "figma_disconnect": {
+        figmaConnectedState = false;
+        try { chrome.storage.local.set({ rsFigmaConnected: false }); } catch {}
+        sendResponse({ ok: true, figma: false });
         break;
       }
       case "blender_disconnect": {
