@@ -5091,22 +5091,6 @@
                 </div>
               </div>
 
-              <div class="rs-figma-card ${figmaConnected() ? "on" : ""}">
-                <div class="rs-figma-top">
-                  <span class="rs-figma-mark" aria-hidden="true"></span>
-                  <div class="rs-figma-copy">
-                    <span class="rs-figma-name">Figma Bridge</span>
-                    <span class="rs-figma-sub">${figmaConnected() ? "Live — designing on canvas, auto-exporting to Studio." : "Companion plugin in Figma? Plugins → Development → OR Figma Bridge, then connect."}</span>
-                  </div>
-                  <span class="rs-figma-pill">${figmaConnected() ? "on" : "off"}</span>
-                </div>
-                <div class="rs-figma-actions">
-                  <button type="button" id="rs-mcp-figma">${figmaConnected() ? "Reconnect Figma" : "Connect Figma"}</button>
-                  ${figmaConnected() ? '<button type="button" class="rs-figma-off" id="rs-mcp-figma-off">Disconnect</button>' : ""}
-                  <button type="button" class="rs-figma-link" id="rs-figma-site">figma.com</button>
-                </div>
-              </div>
-
            ${mcpList}
            <div class="rs-mcp-sep"></div>
             <input id="rs-mcp-name" class="rs-mcp-field" placeholder="Name, e.g. Sketchfab" />
@@ -5377,40 +5361,6 @@
         syncBlenderFlag();
         try { toast("Blender disconnected"); playSfx("ok"); } catch {}
         buildMenu();
-      });
-
-      const figmaBtn = menuEl.querySelector("#rs-mcp-figma");
-      if (figmaBtn) figmaBtn.addEventListener("click", async () => {
-        if (mcpBusy) return;
-        setMcpBusy(true, "Checking Figma on port 9878…");
-        const r = await bg({ type: "figma_connect" });
-        setMcpBusy(false);
-        if (!r || !r.ok) {
-          const err = String((r && r.error) || "Couldn't reach Figma plugin on port 9878. In Figma: Plugins → Development → OR Figma Bridge").slice(0, 180);
-          mcpStatus.textContent = err;
-          try { toast(err); playSfx("error"); } catch {}
-          setTimeout(() => { if (!mcpBusy) mcpStatus.textContent = ""; }, 8000);
-          return;
-        }
-        figmaConnectedCached = true;
-        try { chrome.storage.local.set({ rsFigmaConnected: true }); } catch {}
-        try { toast("Figma bridge connected — ready to design and auto-export to Studio"); playSfx("ok"); } catch {}
-        buildMenu();
-      });
-      const figmaOff = menuEl.querySelector("#rs-mcp-figma-off");
-      if (figmaOff) figmaOff.addEventListener("click", async () => {
-        if (mcpBusy) return;
-        setMcpBusy(true, "Disconnecting Figma…");
-        await bg({ type: "figma_disconnect" });
-        setMcpBusy(false);
-        figmaConnectedCached = false;
-        try { chrome.storage.local.set({ rsFigmaConnected: false }); } catch {}
-        try { toast("Figma bridge disconnected"); playSfx("ok"); } catch {}
-        buildMenu();
-      });
-      const figmaSite = menuEl.querySelector("#rs-figma-site");
-      if (figmaSite) figmaSite.addEventListener("click", () => {
-        try { window.open("https://figma.com", "_blank", "noopener"); } catch {}
       });
       const blenderSite = menuEl.querySelector("#rs-blender-site");
       if (blenderSite) blenderSite.addEventListener("click", () => {
