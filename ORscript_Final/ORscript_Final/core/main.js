@@ -6999,40 +6999,40 @@ function renderCards(panel) {
       } catch {}
     }
     function placeCardsFab() {
-      if (!cardsBtn || !bar) return;
-      // Cards FAB is ALWAYS visible now: RS/US open the mechanic library,
-      // AgentScript opens the session summary + Danger zone. Hiding it made
-      // half the UI feel missing; everything inside degrades gracefully.
-      const br = bar.getBoundingClientRect();
-      if (bar.style.display === "none" || !br.width) {
-        cardsBtn.style.display = "none";
-        return;
-      }
-      cardsBtn.style.display = "";
-      let fit = null;
-      try { fit = (P.barAnchor && P.barAnchor()) || null; } catch {}
-      if (!fit || !fit.isConnected) { try { fit = (P.composerFrame && P.composerFrame()) || null; } catch {} }
-      if (!fit || !fit.isConnected) { fit = (P.getEditor && P.getEditor()) || null; }
-      if (!fit || !fit.isConnected) {
-        fit = bar.parentElement;
-        if (fit === root || fit === document.documentElement) fit = null;
-      }
-      let fr = fit ? fit.getBoundingClientRect() : null;
-      if (!fr || !fr.height || fr.height < br.height) fr = br;
-      let left = fr.left - FAB_SIZE - 10;
-      if (left < 8) left = 8;
-      const top = fr.top + (fr.height - FAB_SIZE) / 2;
-      cardsBtn.style.left = Math.round(left) + "px";
-      cardsBtn.style.top = Math.round(top) + "px";
-      // Theme refresh (~every 0.5s) — cheap enough, adapts to site theme flips.
-      fabThemeTick++;
-      if (fit && fabThemeTick % 30 === 1) syncFabTheme(fit);
-      // Keep Activity timestamps/results fresh while the panel sits open
-      // (AgentScript session view refreshes too — its "ago" stamps go stale).
-      if (cardsPanel && !cardsPanel.hidden && (cardsTab === "activity" || activeEngine() === "local") && recentCards.length) {
-        fabActivityTick++;
-        if (fabActivityTick % 300 === 0) renderCards(cardsPanel);
-      }
+      try {
+        if (!cardsBtn || !bar) return;
+        const br = bar.getBoundingClientRect();
+        if (bar.style.display === "none" || !br.width) {
+          cardsBtn.style.display = "none";
+          return;
+        }
+        let fit = null;
+        try { fit = (P.barAnchor && P.barAnchor()) || null; } catch {}
+        if (!fit || !fit.isConnected) { try { fit = (P.composerFrame && P.composerFrame()) || null; } catch {} }
+        if (!fit || !fit.isConnected) { fit = (P.getEditor && P.getEditor()) || null; }
+        if (!fit || !fit.isConnected) {
+          fit = bar.parentElement;
+          if (fit === root || fit === document.documentElement) fit = null;
+        }
+        let fr = fit ? fit.getBoundingClientRect() : null;
+        if (!fr || !fr.height || fr.height < br.height) fr = br;
+        if (!fr || !fr.width || fr.left < 0) {
+          cardsBtn.style.display = "none";
+          return;
+        }
+        cardsBtn.style.display = "";
+        let left = fr.left - FAB_SIZE - 10;
+        if (left < 8) left = 8;
+        const top = fr.top + (fr.height - FAB_SIZE) / 2;
+        cardsBtn.style.left = Math.round(left) + "px";
+        cardsBtn.style.top = Math.round(top) + "px";
+        fabThemeTick++;
+        if (fit && fabThemeTick % 30 === 1) syncFabTheme(fit);
+        if (cardsPanel && !cardsPanel.hidden && (cardsTab === "activity" || activeEngine() === "local") && recentCards.length) {
+          fabActivityTick++;
+          if (fabActivityTick % 300 === 0) renderCards(cardsPanel);
+        }
+      } catch (err) {}
     }
 
     function placeBar() {
@@ -7153,7 +7153,9 @@ function renderCards(panel) {
       // No composer yet (or 0-width during layout): keep the bar on screen so
       // the agent is never "gone". Dock it to the bottom of the viewport.
       const r = f && f.isConnected ? f.getBoundingClientRect() : null;
-      if (!f || !r || !r.width) {
+      // If composer is missing, unlaid-out (0 width), or scrolled off-screen / at top (0,0),
+      // dock safely above the bottom of the viewport so the bar NEVER jumps to the top corner.
+      if (!f || !r || !r.width || r.top <= 10 || r.bottom <= 20) {
         const w = Math.min(window.innerWidth - 24, BAR_MAX_W);
         const bh = bar.offsetHeight || 40;
         bar.style.width = w + "px";
