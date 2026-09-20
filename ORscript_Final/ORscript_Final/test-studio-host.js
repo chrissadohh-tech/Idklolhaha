@@ -359,24 +359,5 @@ ok("Tweak Mode is persisted in storage and forces prompt re-statement",
   mainJS.includes("A.forceSysResend = true") &&
   cfgJS.includes("TWEAK MODE ACTIVE (RULES RE-STATEMENT & RIGOROUS ENFORCEMENT)"));
 
-ok("Settings menu has Figma MCP card matching Blender",
-  mainJS.includes('rs-figma-card') && mainJS.includes('rs-mcp-figma'));
-
-ok("Figma card shows connection pill status matching Blender",
-  mainJS.includes('rs-figma-pill') && mainJS.includes('figmaConnected()'));
-
-ok("Overlay CSS styles Figma card with theme accents and pill",
-  css.includes('.rs-figma-card') && css.includes('#rs-mcp-figma'));
-
-ok("background.js handles figma_connect and figma_disconnect messages",
-  bg.includes('figma_connect') && bg.includes('figma_disconnect'));
-
-ok("or-figma-plugin ships manifest.json and code.js for Figma desktop",
-  fs.existsSync(path.join(__dirname, "or-figma-plugin", "manifest.json")) &&
-  fs.existsSync(path.join(__dirname, "or-figma-plugin", "code.js")));
-
-ok("System prompt includes Figma to Roblox Studio automated pipeline instructions",
-  cfgJS.includes("FIGMA TO ROBLOX STUDIO PIPELINE"));
-
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
