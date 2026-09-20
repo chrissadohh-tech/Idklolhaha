@@ -23,6 +23,10 @@ use std::time::Instant;
 
 const MAX_TEXT_CHARS: usize = 40_000;
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
+/// Cap for the extension's binary (screenshot) read. A 1000px viewport PNG is
+/// well under this; the ceiling just stops a stray 100 MB file from being
+/// base64'd over the socket.
+const MAX_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_RUN_OUTPUT: usize = 8_000;
 const DEFAULT_RUN_TIMEOUT: u64 = 60;
 const MAX_RUN_TIMEOUT: u64 = 600;
@@ -880,6 +884,54 @@ pub async fn tool_download_file(ws: &Workspace, args: &serde_json::Value) -> Res
     ))
 }
 
+/// Extension-internal: read a BINARY file (a screenshot) as base64 so the
+/// browser can attach it to the chat. `read_file` is line-numbered text and
+/// would mangle binary, so this returns
+/// `{"ok":true,"mimeType":...,"bytes":N,"data":"<base64>"}` instead.
+///
+/// Deliberately NOT part of `catalog()`: it is plumbing for the extension's
+/// Blender viewport capture, not something the model should ever call.
+pub async fn tool_read_file_base64(ws: &Workspace, args: &serde_json::Value) -> Result<String, String> {
+    let p = ws.resolve_path(arg_str(args, "path")?.as_str(), true)?;
+    require_file(ws, &p)?;
+    let size = tokio::fs::metadata(&p).await.map_err(|e| e.to_string())?.len();
+    if size > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "'{}' is {} - larger than the {} image-read cap.",
+            ws.display(&p), human_size(size as f64), human_size(MAX_IMAGE_BYTES as f64)
+        ));
+    }
+    let raw = tokio::fs::read(&p).await.map_err(|e| e.to_string())?;
+    let mime = match p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    };
+    Ok(serde_json::json!({
+        "ok": true, "mimeType": mime, "bytes": raw.len(), "data": base64(&raw),
+    }).to_string())
+}
+
+/// Minimal RFC 4648 base64 encoder. Hand-rolled on purpose: adding a crate would
+/// churn Cargo.lock and break offline `cargo build --release` runs.
+fn base64(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
 // -- dispatch ------------------------------------------------------------
 
 pub async fn dispatch(ws: &Workspace, name: &str, args: serde_json::Value) -> Result<String, String> {
@@ -890,6 +942,8 @@ pub async fn dispatch(ws: &Workspace, name: &str, args: serde_json::Value) -> Re
         "list_directory" => tool_list_directory(ws, a).await,
         "tree" => tool_tree(ws, a).await,
         "read_file" => tool_read_file(ws, a).await,
+        // Extension-internal (see tool_read_file_base64) - kept out of catalog().
+        "read_file_base64" => tool_read_file_base64(ws, a).await,
         "write_file" => tool_write_file(ws, a).await,
         "edit_file" => tool_edit_file(ws, a).await,
         "create_folder" => tool_create_folder(ws, a).await,
@@ -951,6 +1005,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Workspace::new(Some(dir.to_str().unwrap())).unwrap()
+    }
+
+    // RFC 4648 test vectors - the hand-rolled encoder is what carries every
+    // Blender viewport capture, so it is locked down explicitly.
+    #[test]
+    fn base64_matches_rfc4648_vectors() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foob"), "Zm9vYg==");
+        assert_eq!(base64(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+        assert_eq!(base64(&[0xff, 0x00, 0x80]), "/wCA");
+    }
+
+    #[tokio::test]
+    async fn read_file_base64_round_trips_a_binary_png() {
+        let ws = temp_ws("b64");
+        // 1x1 transparent PNG - exercises a real binary payload, not text.
+        let png: Vec<u8> = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                                0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0xFF, 0xFE];
+        tokio::fs::write(ws.canon_root.join("shot.png"), &png).await.unwrap();
+        let out = tool_read_file_base64(&ws, &serde_json::json!({"path": "shot.png"})).await.unwrap();
+        let j: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(j["mimeType"], "image/png");
+        assert_eq!(j["bytes"].as_u64().unwrap() as usize, png.len());
+        assert_eq!(j["data"], base64(&png));
+        // The tool stays sandboxed like every other workspace tool.
+        assert!(tool_read_file_base64(&ws, &serde_json::json!({"path": "../escape.png"})).await.is_err());
+        assert!(tool_read_file_base64(&ws, &serde_json::json!({"path": "/etc/passwd"})).await.is_err());
+        let _ = std::fs::remove_dir_all(&ws.canon_root);
     }
 
     #[test]

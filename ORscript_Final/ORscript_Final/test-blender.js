@@ -21,6 +21,45 @@ ok("bg does not rememberBlender before success", !bg.includes("rememberBlender")
 ok("bg heartbeat does not restart blender", !bg.includes("ensureBlenderShim") && !bg.includes("blenderHealth"));
 ok("bg routes blender tools only when connected", bg.includes("blenderAddon && isBlenderToolName"));
 ok("bg sendLocalEngine for one-shot", bg.includes("sendLocalEngine") && bg.includes("blender_once."));
+// ── viewport captures: the addon writes a PNG, the extension must READ IT BACK ─
+const rs = fs.readFileSync(path.join(root, "agent/src/main.rs"), "utf8");
+const ws = fs.readFileSync(path.join(root, "agent/src/workspace.rs"), "utf8");
+ok("only the addon's own capture tools exist", bg.includes('"get_viewport_screenshot"') &&
+  !bg.includes("blender_screenshot") && !bg.includes("capture_tab"));
+ok("blender shot is read back as base64 (not a text read)", bg.includes("read_file_base64") &&
+  bg.includes("async function readWorkspaceImage") && bg.includes('shotFile = cand') &&
+  bg.includes("(png|jpe?g|webp)$/i.test(cand)"));
+ok("blenderCall returns the image instead of hardcoded []", bg.includes("images.push(img)") &&
+  !/images: \[\], meshFile: mf/.test(bg));
+ok("agent read_file_base64 is binary-safe + sandboxed", ws.includes("pub async fn tool_read_file_base64") &&
+  ws.includes("fn base64(bytes: &[u8]) -> String") && ws.includes("MAX_IMAGE_BYTES") &&
+  ws.includes('"read_file_base64" => tool_read_file_base64') && !ws.includes('{"name": "read_file_base64"'));
+ok("agent reports its version (a stale exe is otherwise invisible)", rs.includes('"version": env!("CARGO_PKG_VERSION")') &&
+  fs.readFileSync(path.join(root, "agent/Cargo.toml"), "utf8").includes('version = "1.18.1"'));
+// ── addon MCP servers: the ZeroScript method (config-driven, images ride along) ─
+ok("blender can be hosted as an MCP addon server", bg.includes("async function blenderMcpRegister") &&
+  bg.includes('server_id: "blender"') && bg.includes("BLENDER_MCP_TOOLS") &&
+  bg.includes('blenderMode = "mcp"') && bg.includes('blenderMode = "tcp"'));
+ok("blender_mcp tools ride the agent, OR ops keep the direct socket",
+  bg.includes('if (blenderMode === "mcp" && BLENDER_MCP_TOOLS.has(bareM))') &&
+  bg.includes('return { ok: true, text: String(r.text || ""), images: r.images || [] };'));
+ok("disconnect also removes the addon server", bg.includes('type: "remove_server", server_id: "blender"'));
+ok("agent reads mcp_servers.json (mcpServers shape)", rs.includes("mcp_servers.json") &&
+  rs.includes('rename = "mcpServers"') && rs.includes("struct ServerSpec") &&
+  rs.includes("fn read_mcp_config") && rs.includes("fn write_mcp_config"));
+ok("agent manages addon servers (add/remove, primary protected)",
+  rs.includes('"add_server" =>') && rs.includes('"remove_server" =>') &&
+  rs.includes("PRIMARY_SERVER_ID") && rs.includes("cannot be edited") && rs.includes("cannot be removed") &&
+  rs.includes("async fn addon_spawn") && rs.includes("async fn route_call") &&
+  rs.includes("async fn addons_merged_tools") && rs.includes("async fn boot_addons"));
+ok("colliding tool names are advertised as server/tool", rs.includes('format!("{sid}/{bare}")') &&
+  rs.includes("async fn addon_owner"));
+ok("Studio MCP is discovered, not hard-coded via mcp.bat",
+  rs.includes("fn find_studio_mcp()") && rs.includes("RobloxStudioBeta.exe") &&
+  rs.includes("newest_by_mtime") && rs.includes("OR_STUDIO_MCP_PATH") &&
+  rs.includes("fn resolve_launcher") && rs.includes('"npx" | "npm"'));
+ok("agent keeps MCP image content items", rs.includes("struct McpCall") &&
+  rs.includes('!= Some("image")') && rs.includes('"images":images'));
 ok("main connect uses blender_connect", main.includes('type: "blender_connect"') && !main.includes("uvx blender-mcp"));
 ok("main does not intercept blender tools when disconnected",
   main.includes("A.bridge && A.bridge.blender") && !main.includes("Blender is not connected. Click Connect Blender in the OR menu"));

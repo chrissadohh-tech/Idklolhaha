@@ -19,6 +19,10 @@ const ENGINES = ["roblox", "local"];
 function normalizeEngine(v) { return v === "local" ? "local" : "roblox"; }
 let engine = "roblox"; // "roblox" | "local"
 let rustMode = false; // true if Rust agent on 3000 is reachable (preferred)
+// Version the running or-agent reports on /api/status. "" = a build from before
+// the field existed, i.e. older than 1.18.1 - the UI says so instead of leaving
+// a stale binary invisible from the chat.
+let agentVersion = "";
 chrome.storage?.local.get(ENGINE_KEY, (o) => {
   const want = normalizeEngine(o && o[ENGINE_KEY]);
   if (want !== engine) {
@@ -112,14 +116,47 @@ let robloxEditorConnected = false;
 let localReady = false; // agent's workspace is up (from /api/status local_ready)
 let localFull = false; // AgentScript FULL PC ACCESS (agent is source of truth)
 let localRoot = ""; // workspace path, injected into the AI's state line
-let blenderAddon = false; // blender-mcp addon listening on TCP 9876
+let blenderAddon = false; // Blender is connected (either transport below)
+// "mcp" = the blender-mcp SERVER is hosted by the agent (a config-driven addon,
+// same method as ZeroScript: its tools merge into the catalogue and its images
+// arrive as MCP image content items). "tcp" = the direct socket to the Blender
+// addon on 9876, which OR's own convenience ops still use.
+let blenderMode = "";
 let blenderError = "";
+// The command that hosts blender-mcp; overridable via chrome.storage
+// "rs-blender-mcp-cmd" for uvx/pipx/manual installs.
+const BLENDER_MCP_CMD = { command: "uvx", args: ["blender-mcp"] };
+// blender-mcp's OWN tool names - what the addon MCP server answers. OR's
+// convenience tools (blender_add_cube, blender_send_to_studio, …) are NOT here:
+// those are built on blender_ops.py and stay on the direct transport.
+const BLENDER_MCP_TOOLS = new Set([
+  "get_scene_info", "get_object_info", "get_viewport_screenshot", "execute_blender_code",
+  "download_polyhaven_asset", "set_texture", "get_polyhaven_status",
+  "get_hyper3d_status", "generate_hyper3d_model_via_text", "generate_hyper3d_model_via_images",
+  "poll_rodin_job_status", "import_generated_asset", "generate_hunyuan3d_model",
+  "poll_hunyuan_job_status", "import_hunyuan_asset",
+]);
+
+// Register/refresh the blender-mcp addon server in the AGENT (mcp_servers.json).
+async function blenderMcpRegister() {
+  let cmd = BLENDER_MCP_CMD;
+  try {
+    const o = await new Promise((res) => chrome.storage.local.get("rs-blender-mcp-cmd", res));
+    if (o && o["rs-blender-mcp-cmd"] && o["rs-blender-mcp-cmd"].command) cmd = o["rs-blender-mcp-cmd"];
+  } catch {}
+  const r = await send({
+    type: "add_server", server_id: "blender",
+    command: cmd.command, args: cmd.args || [], env: cmd.env,
+  }, 45000);
+  if (r && r.ok) return { ok: true, tools: r.tools, servers: r.servers };
+  return { ok: false, error: (r && r.error) || "the agent refused the blender MCP server" };
+}
 let blenderScriptsReady = false;
 const BLENDER_TOOL_NAMES = new Set([
   "get_scene_info", "get_object_info", "execute_blender_code", "get_viewport_screenshot",
   "blender_export_fbx", "blender_import_fbx", "blender_export_obj", "blender_import_obj",
   "blender_mesh_dump", "blender_send_to_studio", "blender_execute_code",
-  "blender_get_scene_info", "blender_get_object_info", "blender_screenshot",
+  "blender_get_scene_info", "blender_get_object_info",
   "export_blender_fbx", "import_blender_fbx",
 ]);
 function btool(name, description, props, required) {
@@ -530,7 +567,7 @@ function failAllPending(reason) {
   pending.clear();
 }
 
-// ── status push to any open DeepSeek tab + popup ─────────────────────────
+// ── status push to any open provider tab + popup ─────────────────────────
 function statusObj() {
   return {
     type: "rs-status", connected, mcpAlive, studio: studioConnected, studioApp, studioProc,
@@ -539,7 +576,10 @@ function statusObj() {
     local_root: localRoot,
     tools: mergeBlenderTools(toolsCache).length,
     servers: blenderServers(serversCache), engine,
-    blender: blenderAddon, blender_error: blenderError || undefined,
+    blender: blenderAddon, blender_mode: blenderMode || undefined,
+    blender_error: blenderError || undefined,
+    // Absent on agents older than 1.18.1 - the UI reads "" as "old build".
+    agent_version: agentVersion || undefined,
   };
 }
 
@@ -551,11 +591,13 @@ async function refreshProcStatus() {
     const nr = !!j.roblox_proc;
     const nl = j.local_ready === true;
     const nf = j.local_full === true;
+    const nv = typeof j.version === "string" ? j.version : "";
     const nrRoot = typeof j.local_root === "string" ? j.local_root : localRoot;
-    const changed = nr !== robloxProc || nl !== localReady || nf !== localFull || nrRoot !== localRoot;
+    const changed = nr !== robloxProc || nl !== localReady || nf !== localFull || nrRoot !== localRoot || nv !== agentVersion;
     robloxProc = nr;
     localReady = nl;
     localFull = nf;
+    agentVersion = nv;
     localRoot = nrRoot;
     // One-shot re-sync: if the agent restarted with FULL off but the user's
     // persisted toggle says ON, re-apply their choice once.
@@ -585,24 +627,121 @@ function broadcastStatus() {
 }
 
 
-async function ddgSearch(query, limit) {
+// ── Web tools (web_fetch / web_search) ───────────────────────────────────
+// Both ride the SERVICE WORKER's network stack, gated by TWO things:
+//   1) manifest host_permissions (https://*/* already covers every https host), and
+//   2) the extension's OWN CSP - content_security_policy.extension_pages.
+// The old policy was `default-src 'none'` plus a connect-src that listed only
+// localhost and ollama, so EVERY external fetch from here was refused with
+// "Failed to fetch": web_fetch, web_search, the Roblox web APIs and the
+// dev-product lookups all died the same way. manifest.json now allows `https:`
+// in connect-src - if that policy is ever tightened again, these tools and the
+// Roblox account/API calls die with it.
+const WEB_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+// Deliberately NO custom User-Agent. Bot walls (DuckDuckGo, Cloudflare) refuse
+// "OR/1.0"-style clients outright, while Chrome's native UA is exactly what a
+// real navigation sends; a custom UA also gets silently dropped by some builds.
+// Accept / Accept-Language are what a normal browser request carries.
+function webHeaders(extra) {
+  const h = { "Accept": WEB_ACCEPT, "Accept-Language": "en-US,en;q=0.9" };
+  return Object.assign(h, extra || {});
+}
+function decodeEntities(s) {
+  return String(s || "")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCharCode(Number(n)); } catch { return " "; } });
+}
+// Anchor text -> one-line title (tags stripped: engines bold the query terms).
+function cleanText(s) {
+  return decodeEntities(String(s || "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+// Engines wrap outbound links in their own redirectors; unwrap both flavours.
+function stripWrappedUrl(href) {
+  let h = decodeEntities(String(href || "").trim());
+  if (!h) return "";
+  if (h.startsWith("//")) h = "https:" + h;
+  const u = h.match(/[?&]uddg=([^&]+)/);            // DuckDuckGo: /l/?uddg=<encoded>
+  if (u) { try { h = decodeURIComponent(u[1]); } catch {} }
+  const b = h.match(/[?&]u=a1([A-Za-z0-9_\-]+)/);   // Bing: /ck/a?...&u=a1<base64url>
+  if (b) {
+    try {
+      const b64 = b[1].replace(/-/g, "+").replace(/_/g, "/");
+      const latin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+      const utf8 = decodeURIComponent(Array.prototype.map.call(latin,
+        (c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join(""));
+      if (/^https?:\/\//i.test(utf8)) h = utf8;
+    } catch {}
+  }
+  return h;
+}
+const RESULT_HOST_NOISE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:duckduckgo|bing|mojeek)\.com\//i;
+const isResultUrl = (u) => /^https?:\/\//i.test(u) && !RESULT_HOST_NOISE.test(u);
+function pushHit(out, title, href, limit) {
+  const url = stripWrappedUrl(href);
+  if (out.length < limit && title && isResultUrl(url)) out.push({ title, url });
+}
+// DuckDuckGo html: <a rel="nofollow" class="result__a" href="…">Title</a>
+function parseDdgHtml(html, limit) {
+  const out = [];
+  const re = /<a\b[^>]*class="[^"]*result__a[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null && out.length < limit) {
+    pushHit(out, cleanText(m[1]), (m[0].match(/href="([^"]*)"/i) || [])[1], limit);
+  }
+  return out;
+}
+// DuckDuckGo lite: <a rel="nofollow" href="…" class="result-link">Title</a>
+function parseDdgLite(html, limit) {
+  const out = [];
+  const re = /<a\b[^>]*class="[^"]*result-link[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null && out.length < limit) {
+    pushHit(out, cleanText(m[1]), (m[0].match(/href="([^"]*)"/i) || [])[1], limit);
+  }
+  return out;
+}
+// Bing and Mojeek both put each organic result in an <li> whose heading holds
+// the link (<li class="b_algo"><h2><a href=…>, <li><h2><a class="title" …>).
+function parseHeadingAnchors(html, limit) {
+  const out = [];
+  const blocks = html.match(/<li\b[\s\S]*?<\/li>/gi) || [];
+  for (const b of blocks) {
+    if (out.length >= limit) break;
+    const a = b.match(/<h[23][^>]*>[\s\S]*?<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (a) pushHit(out, cleanText(a[2]), a[1], limit);
+  }
+  return out;
+}
+// Fallback chain: DDG's endpoints 403 or serve a bot wall for some IPs/profiles,
+// so try several engines and take the first that parses. A total miss reports
+// every engine's failure, so the next attempt can be debugged instead of guessed.
+const SEARCH_ENGINES = [
+  { id: "ddg-html", url: (q) => "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q), parse: parseDdgHtml },
+  { id: "ddg-lite", url: (q) => "https://lite.duckduckgo.com/lite/?q=" + encodeURIComponent(q), parse: parseDdgLite },
+  { id: "bing",     url: (q) => "https://www.bing.com/search?q=" + encodeURIComponent(q) + "&setlang=en", parse: parseHeadingAnchors },
+  { id: "mojeek",   url: (q) => "https://www.mojeek.com/search?q=" + encodeURIComponent(q), parse: parseHeadingAnchors },
+];
+async function webSearch(query, limit) {
   const q = String(query || "").trim();
   const n = Math.max(1, Math.min(8, Number(limit) || 3));
-  if (!q) return [];
-  const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q);
-  const res = await fetch(url, { headers: { "User-Agent": "OR/1.0" } });
-  if (!res.ok) throw new Error("search HTTP " + res.status);
-  const html = await res.text();
-  const results = [];
-  const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-  let m;
-  while ((m = re.exec(html)) !== null && results.length < n) {
-    let href = m[1]; const title = m[2].trim();
-    const um = href.match(/uddg=([^&]+)/);
-    if (um) try { href = decodeURIComponent(um[1]); } catch {}
-    if (title && href) results.push({ title, url: href });
+  if (!q) return { results: [], engine: "", errors: ["query is required"] };
+  const errors = [];
+  for (const eng of SEARCH_ENGINES) {
+    try {
+      const res = await fetch(eng.url(q), { headers: webHeaders(), credentials: "omit", redirect: "follow" });
+      if (!res.ok) { errors.push(eng.id + ": HTTP " + res.status); continue; }
+      const html = await res.text();
+      const seen = new Set();
+      const results = eng.parse(html, n * 2)
+        .filter((r) => (seen.has(r.url) ? false : seen.add(r.url) && true))
+        .slice(0, n);
+      if (results.length) return { results, engine: eng.id, errors };
+      const wall = /anomaly|captcha|unusual traffic|are you a robot|enable javascript/i.test(html);
+      errors.push(eng.id + ": 0 parsed" + (wall ? " (bot wall)" : ""));
+    } catch (e) { errors.push(eng.id + ": " + String((e && e.message) || e)); }
   }
-  return results;
+  return { results: [], engine: "", errors };
 }
 function htmlToText(html) {
   let s = String(html || "");
@@ -613,8 +752,7 @@ function htmlToText(html) {
   s = s.replace(/<br\s*\/?>/gi, "\n");
   s = s.replace(/<\/(p|div|h[1-6]|li|tr|section|article|header|footer|blockquote|pre|ul|ol|table)>/gi, "\n");
   s = s.replace(/<[^>]+>/g, " ");
-  s = s.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/g, "'");
-  s = s.replace(/&#(\d+);/g, (_, n) => { try { return String.fromCharCode(Number(n)); } catch { return " "; } });
+  s = decodeEntities(s);
   s = s.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
   return s;
 }
@@ -642,6 +780,132 @@ function setBlender(on, err) {
   blenderError = on ? "" : (err || blenderError);
   try { chrome.storage.local.set({ [BLENDER_KEY]: !!on }); } catch {}
   if (was !== blenderAddon) broadcastStatus();
+}
+
+// ── Studio images without a Rust rebuild ────────────────────────────────
+// Studio's screen_capture answers with an MCP *image* content item and next to
+// no text. or-agent 1.18.0 forwards text items only, so the picture was dropped
+// inside the binary and the tool read as "(tool returned an empty result)".
+// studio_mcp_host.py (started by "Start OR Agent.bat") hands those bytes back
+// INSIDE the text instead, wrapped in
+//     <<OR_IMAGE mimeType="image/png" bytes=12345>>
+//     <base64>
+//     <<OR_END>>
+// Decode them here so the provider attaches a real image to the next message -
+// the exact result a rebuilt agent produces natively. Idempotent: a result
+// without markers is returned untouched, so the two routes can coexist.
+const OR_IMAGE_RE = /<<OR_IMAGE\b([^>]*)>>\s*([A-Za-z0-9+/=]+)\s*<<OR_END>>/g;
+const OR_IMAGE_MIME_RE = /mimeType\s*=\s*"?([\w.+-]+\/[\w.+-]+)"?/i;
+function absorbOrImages(r) {
+  if (!r || typeof r.text !== "string" || r.text.indexOf("<<OR_IMAGE") === -1) return r;
+  const found = [];
+  const text = r.text
+    .replace(OR_IMAGE_RE, (_m, attrs, data) => {
+      if (data && data.length >= 64) {
+        const m = OR_IMAGE_MIME_RE.exec(attrs || "");
+        found.push({ mimeType: (m && m[1]) || "image/png", data: data });
+      }
+      return "";
+    })
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!found.length) return r;
+  return Object.assign({}, r, { text: text, images: (r.images || []).concat(found) });
+}
+
+// ── Capture speed: send less picture ────────────────────────────────────
+// A Studio capture is a full-viewport PNG - often several MB of base64 - and the
+// wait a user actually feels is the CHAT UPLOAD, not the capture. Shrinking it
+// first cuts that (and the attach) dramatically while staying readable: only
+// oversized captures are touched, and only when the result is actually smaller.
+// 0 disables it: chrome.storage.local.set({ "rs-shot-max": 0 }).
+let shotMax = 1400;      // longest side, px
+let shotQuality = 0.9;   // JPEG quality for the re-encode
+try {
+  chrome.storage?.local.get(["rs-shot-max", "rs-shot-quality"], (o) => {
+    if (!o) return;
+    const m = Number(o["rs-shot-max"]);
+    if (Number.isFinite(m) && m >= 0) shotMax = m;
+    const q = Number(o["rs-shot-quality"]);
+    if (Number.isFinite(q) && q > 0.3 && q <= 1) shotQuality = q;
+  });
+} catch {}
+
+const SHRINK_KEEP_BYTES = 350 * 1024; // below this, the PNG is sent untouched
+
+// The settings menu's "Fast screenshots" toggle writes rs-shot-max; applying it
+// here means the next capture already uses the new size, with no extension
+// reload (the value above is only the startup default).
+try {
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== "local") return;
+    let touched = false;
+    if (changes["rs-shot-max"]) {
+      const m = Number(changes["rs-shot-max"].newValue);
+      if (Number.isFinite(m) && m >= 0) { shotMax = m; touched = true; }
+    }
+    if (changes["rs-shot-quality"]) {
+      const q = Number(changes["rs-shot-quality"].newValue);
+      if (Number.isFinite(q) && q > 0.3 && q <= 1) { shotQuality = q; touched = true; }
+    }
+    if (touched) log(`capture size setting applied - max ${shotMax || "off"}px, quality ${shotQuality}`);
+  });
+} catch {}
+
+function b64ToBytes(b64) {
+  const bin = atob(String(b64 || ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function bytesToB64(bytes) {
+  let s = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+
+async function shrinkImages(r) {
+  if (!r || !Array.isArray(r.images) || !r.images.length) return r;
+  if (!shotMax || shotMax <= 0) return r;
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") return r;
+  const out = [];
+  let shrunk = 0, before = 0, after = 0;
+  for (const img of r.images) {
+    try {
+      const bytes = b64ToBytes(img.data);
+      before += bytes.length;
+      // Small capture: keep the ORIGINAL bytes (identical quality, no decode).
+      if (bytes.length <= SHRINK_KEEP_BYTES) {
+        out.push(img); after += bytes.length; continue;
+      }
+      const bmp = await createImageBitmap(new Blob([bytes], { type: img.mimeType || "image/png" }));
+      const scale = Math.min(1, shotMax / Math.max(bmp.width, bmp.height));
+      const w = Math.max(1, Math.round(bmp.width * scale));
+      const h = Math.max(1, Math.round(bmp.height * scale));
+      const cv = new OffscreenCanvas(w, h);
+      const ctx = cv.getContext("2d");
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      const blob = await cv.convertToBlob({ type: "image/jpeg", quality: shotQuality });
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      if (buf.length >= bytes.length) { // no gain (or a palette win) - keep the PNG
+        out.push(img); after += bytes.length; continue;
+      }
+      out.push({ mimeType: "image/jpeg", data: bytesToB64(buf) });
+      after += buf.length; shrunk++;
+    } catch (e) {
+      // A speed tweak must never cost a capture.
+      out.push(img);
+    }
+  }
+  if (!shrunk) return r;
+  log(`capture resized ${Math.round(before / 1024)}KB -> ${Math.round(after / 1024)}KB (max ${shotMax}px q${shotQuality})`);
+  return Object.assign({}, r, { images: out });
 }
 
 async function sendLocalEngine(obj, timeout = 25000) {
@@ -771,12 +1035,38 @@ async function probeBlenderTcp() {
 }
 
 async function connectBlender() {
+  // 1) ZeroScript's method: host blender-mcp as an MCP server INSIDE the agent,
+  //    which merges its tools and forwards its image content items.
+  try {
+    const reg = await blenderMcpRegister();
+    if (reg.ok) {
+      blenderMode = "mcp";
+      setBlender(true, "");
+      try {
+        const ping = await blenderCall("get_scene_info", {}, 20000);
+        if (ping && ping.ok === false) {
+          setBlender(false, ping.error);           // server up, Blender addon not
+          broadcastStatus();
+          return { ok: false, blender: false, mode: "mcp", error: ping.error };
+        }
+      } catch {}
+      broadcastStatus();
+      log("Blender connected via the MCP server (agent addon)");
+      return { ok: true, blender: true, mode: "mcp", tools: reg.tools };
+    }
+    log("blender-mcp addon unavailable (" + (reg.error || "is uvx installed?") + ") - using the direct 9876 socket");
+  } catch (e) {
+    log("blender-mcp addon registration failed: " + String(e && e.message || e));
+  }
+  // 2) Fallback: the direct socket to the Blender addon.
   const p = await probeBlenderTcp();
   if (!p.ok) {
+    blenderMode = "";
     setBlender(false, p.error);
     broadcastStatus();
     return { ok: false, blender: false, error: p.error };
   }
+  blenderMode = "tcp";
   setBlender(true, "");
   try {
     const ping = await blenderCall("get_scene_info", {}, 20000);
@@ -787,7 +1077,7 @@ async function connectBlender() {
     }
   } catch {}
   broadcastStatus();
-  return { ok: true, blender: true };
+  return { ok: true, blender: true, mode: "tcp" };
 }
 
 async function agentWorkspaceRoot() {
@@ -903,7 +1193,7 @@ async function blenderPayload(name, args) {
   if (bare === "get_scene_info" || bare === "blender_get_scene_info") return { type: "get_scene_info", params: {} };
   if (bare === "get_object_info" || bare === "blender_get_object_info") return { type: "get_object_info", params: { name: a.name || a.object_name || "" } };
   if (bare === "execute_blender_code" || bare === "execute_code" || bare === "blender_execute_code") return { type: "execute_code", params: { code: wrapBlenderUserCode(a.code || "") } };
-  if (bare === "get_viewport_screenshot" || bare === "blender_screenshot") {
+  if (bare === "get_viewport_screenshot") {
     let shot = "or_blender_shot.png";
     const root = await agentWorkspaceRoot();
     if (root) shot = root.replace(/[\\/]+$/, "") + "/or_blender_shot.png";
@@ -928,12 +1218,86 @@ async function ensureBlenderScripts() {
   blenderScriptsReady = true;
 }
 
+// Older or-agent (before 1.18.1) has no read_file_base64. When "Start OR
+// Agent.bat" put studio_mcp_host.py in front of Studio, THAT process can read
+// the file for us: its or_host_read_image tool answers with a real image item,
+// which arrives as an <<OR_IMAGE>> marker and decodes like any other capture. So
+// a Blender shot still reaches the chat without a compiler.
+async function readHostImage(absPath) {
+  const p = String(absPath || "").trim();
+  if (!p) return null;
+  const listed = Array.isArray(toolsCache) &&
+    toolsCache.some((t) => t && t.name === "or_host_read_image");
+  if (!listed) return null;
+  try {
+    const r = absorbOrImages(await send(
+      { type: "call_tool", name: "or_host_read_image", arguments: { path: p } }, 30000));
+    if (r && r.ok && r.images && r.images.length) return r.images[0];
+  } catch {}
+  return null;
+}
+
+// Blender viewport captures arrive as a FILE, so read it back through the
+// agent's read_file_base64 (read_file is line-numbered text and would mangle
+// binary). Paths must be workspace-relative: accept either the absolute path we
+// handed the addon (reduced to a relative one when it lives under the root) or a
+// bare name. Returns {mimeType, data} or null.
+async function readWorkspaceImage(filePath) {
+  let rel = String(filePath || "").trim();
+  if (!rel) return null;
+  let root = "";
+  try {
+    root = (await agentWorkspaceRoot() || "").replace(/[\\/]+$/, "");
+    if (root && rel.toLowerCase().startsWith(root.toLowerCase())) {
+      rel = rel.slice(root.length).replace(/^[\\/]+/, "");
+    }
+  } catch {}
+  const cands = [...new Set([rel, rel.split(/[\\/]/).pop()])].filter(Boolean);
+  for (const cand of cands) {
+    try {
+      const r = await sendLocalEngine({
+        type: "call_tool", name: "read_file_base64", arguments: { path: cand },
+      }, 30000);
+      if (!r || !r.ok || !r.text) continue;
+      const j = JSON.parse(r.text);
+      if (!j || !j.data) continue;
+      // The PNG was only a hand-off file: drop it once its bytes are in hand so
+      // the workspace doesn't accumulate screenshots (a failed read keeps it for
+      // debugging). Deliberately NOT awaited - waiting for the agent to delete it
+      // added a whole round trip to every Blender capture.
+      sendLocalEngine({ type: "call_tool", name: "delete_path", arguments: { path: cand } }, 15000).catch(() => {});
+      return { mimeType: j.mimeType || "image/png", data: String(j.data) };
+    } catch {}
+  }
+  // read_file_base64 is a 1.18.1 tool: on an older exe every attempt above came
+  // back "unknown tool". Ask the Python host instead - it runs on the same PC
+  // and hands the bytes back as an image.
+  const hostTries = [...new Set([String(filePath || "").trim(), rel,
+    ...cands.map((c) => (root ? root + "\\" + c : c))])].filter(Boolean);
+  for (const t of hostTries) {
+    const img = await readHostImage(t);
+    if (img) return img;
+  }
+  return null;
+}
+
 let blenderCallLock = Promise.resolve();
 async function blenderCall(name, args, timeout) {
   if (!blenderAddon) {
     return { ok: false, error: "Blender is not connected. Click Connect Blender (Blender: N → MCP for Blender → Start MCP Server)." };
   }
   const run = async () => {
+    // MCP transport: when the agent hosts blender-mcp, its OWN tools go through
+    // it and come back with image content items (that is the capture path).
+    // OR's convenience ops (blender_* built on blender_ops.py) keep the direct
+    // path, so nothing that worked before stops working.
+    const bareM = String(name || "").split("/").pop().split(".").pop();
+    if (blenderMode === "mcp" && BLENDER_MCP_TOOLS.has(bareM)) {
+      const r = await send({ type: "call_tool", name: bareM, arguments: args || {}, timeout: timeout || 120000 }, (timeout || 120000) + 10000);
+      if (r && r.ok) return { ok: true, text: String(r.text || ""), images: r.images || [] };
+      if (r && r.kind !== "disconnected") return { ok: false, error: String((r && r.error) || "blender MCP call failed") };
+      // Bridge down: fall through to the direct socket rather than dead-ending.
+    }
     await ensureBlenderScripts();
     const payload = await blenderPayload(name, args);
     const statusPath = payload._orStatus || "";
@@ -979,6 +1343,18 @@ async function blenderCall(name, args, timeout) {
       return { ok: false, error: msg };
     }
     let result = (data && Object.prototype.hasOwnProperty.call(data, "result")) ? data.result : data;
+    // Studio's screen_capture returns the picture INLINE in the MCP result, but
+    // the blender-mcp addon answers get_viewport_screenshot by WRITING a PNG to
+    // the path we passed (see blenderPayload) and reporting only the filepath -
+    // so this is where the Blender half of the capture feature is completed:
+    // pull those bytes back as base64 and hand them over in the same
+    // {mimeType, data} shape the providers already upload. Snapshot the path
+    // BEFORE the status/mesh reading below can replace `result`.
+    let shotFile = "";
+    try {
+      const cand = result && (result.filepath || result.path || result.file);
+      if (typeof cand === "string" && /\.(png|jpe?g|webp)$/i.test(cand)) shotFile = cand;
+    } catch {}
     const rawText = typeof result === "string" ? result : JSON.stringify(result);
     const marker = String(rawText).indexOf("OR_MESH_JSON:");
     if (marker >= 0) {
@@ -1013,7 +1389,12 @@ async function blenderCall(name, args, timeout) {
     }
     if (meshes && meshes.length && result && typeof result === "object") result.meshes = meshes;
     let textOut = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-    return { ok: true, text: textOut, images: [], meshFile: mf, filepath: result && result.filepath, meshes: meshes || undefined };
+    const images = [];
+    if (shotFile) {
+      const img = await readWorkspaceImage(shotFile);
+      if (img) images.push(img);
+    }
+    return { ok: true, text: textOut, images, meshFile: mf, filepath: result && result.filepath, meshes: meshes || undefined };
   };
   const prev = blenderCallLock;
   let release;
@@ -1210,14 +1591,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "call_tool": {
         const timeout = (msg.timeout || 120000) + 10000;
         if (blenderAddon && isBlenderToolName(msg.name)) {
-          sendResponse(await blenderCall(msg.name, msg.arguments, timeout));
+          sendResponse(await shrinkImages(absorbOrImages(await blenderCall(msg.name, msg.arguments, timeout))));
           break;
         }
         const r = await send(
           { type: "call_tool", name: msg.name, arguments: msg.arguments, timeout: msg.timeout },
           timeout
         );
-        sendResponse(r);
+        // Every Studio/Skills/AgentScript tool call returns here, so the
+        // Python host's <<OR_IMAGE>> markers become r.images once, for all -
+        // and oversized captures are resized before they reach the model.
+        sendResponse(await shrinkImages(absorbOrImages(r)));
         break;
       }
       case "restart_mcp": {
@@ -1244,10 +1628,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "blender_status": {
-        sendResponse({ ok: blenderAddon, blender: blenderAddon, error: blenderError || undefined });
+        sendResponse({ ok: blenderAddon, blender: blenderAddon, mode: blenderMode || undefined, error: blenderError || undefined });
         break;
       }
       case "blender_disconnect": {
+        // Also drop the addon from the agent's config, so a later start doesn't
+        // silently re-spawn it.
+        if (blenderMode === "mcp") {
+          try { await send({ type: "remove_server", server_id: "blender" }, 15000); } catch {}
+        }
+        blenderMode = "";
         setBlender(false, "");
         broadcastStatus();
         sendResponse({ ok: true, blender: false });
@@ -1316,20 +1706,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             const q = String(msg.q || query).trim();
             if (/^https?:\/\//i.test(q)) url = q;
           }
-          let searchNote = "";
+          let searchNote = "", engineId = "";
           if (!url) {
             const q = query || String(msg.q || "").trim();
             if (!q) { sendResponse({ ok: false, error: "url or query is required" }); break; }
-            const hits = await ddgSearch(q, 3);
-            if (!hits.length) { sendResponse({ ok: false, error: "no search results for: " + q }); break; }
-            url = hits[0].url;
-            searchNote = "Searched \"" + q + "\". Top result: " + url + "\n" +
-              hits.map((h, i) => (i+1) + ". " + h.title + " — " + h.url).join("\n") + "\n\n";
+            const found = await webSearch(q, 3);
+            if (!found.results.length) {
+              sendResponse({ ok: false, error: `no search results for "${q}" (${found.errors.join("; ") || "all engines empty"})` });
+              break;
+            }
+            engineId = found.engine;
+            url = found.results[0].url;
+            searchNote = `Searched "${q}" (${found.engine}). Top result: ${url}\n` +
+              found.results.map((h, i) => `${i + 1}. ${h.title} — ${h.url}`).join("\n") + "\n\n";
           }
-          if (!/^https?:\/\//i.test(url)) { sendResponse({ ok: false, error: "url must start with http:// or https://" }); break; }
+          if (!/^https?:\/\//i.test(url)) { sendResponse({ ok: false, error: "url must start with https://" }); break; }
+          // connect-src is https-only, so a plain-http target is upgraded: almost
+          // every site serves https, and a silent "Failed to fetch" for an http://
+          // URL would just look like the bug this code was fixed for.
+          let upgraded = false;
+          if (/^http:\/\//i.test(url) && !/^http:\/\/(127\.0\.0\.1|localhost)(?::|\/|$)/i.test(url)) {
+            url = url.replace(/^http:\/\//i, "https://");
+            upgraded = true;
+          }
           const maxChars = Math.max(500, Math.min(50000, Number(msg.max_chars) || 12000));
-          const res = await fetch(url, { headers: { "User-Agent": "OR/1.0 (web_fetch)", "Accept": "text/html,application/xhtml+xml,application/xml,text/plain,*/*" } });
-          if (!res.ok) { sendResponse({ ok: false, error: `fetch failed HTTP ${res.status}` }); break; }
+          let res;
+          try {
+            res = await fetch(url, { headers: webHeaders(), credentials: "omit", redirect: "follow" });
+          } catch (e) {
+            const hint = upgraded ? " (the extension can only reach https:// hosts — the original URL was http://)" : "";
+            sendResponse({ ok: false, error: `could not reach ${url}: ${String((e && e.message) || e)}${hint}` });
+            break;
+          }
+          if (!res.ok) { sendResponse({ ok: false, error: `fetch failed HTTP ${res.status}${res.statusText ? " " + res.statusText : ""} (${url})` }); break; }
           let text = await res.text();
           const ctype = (res.headers.get("content-type") || "").toLowerCase();
           const looksHtml = /html|xml/.test(ctype) || /^\s*</.test(text);
@@ -1337,7 +1746,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const origLen = text.length;
           const truncated = origLen > maxChars;
           if (truncated) text = text.slice(0, maxChars) + `\n\n…[truncated ${origLen - maxChars} chars]`;
-          sendResponse({ ok: true, text: searchNote + text, truncated, status: res.status, url, content_type: ctype });
+          const out = { ok: true, text: searchNote + text, truncated, status: res.status, url, content_type: ctype };
+          if (engineId) out.engine = engineId;
+          sendResponse(out);
         } catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
         break;
       }
@@ -1346,26 +1757,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const q = String(msg.query || msg.q || "").trim();
           if (!q) { sendResponse({ ok: false, error: "query is required" }); break; }
           const limit = Math.max(1, Math.min(8, Number(msg.limit) || 3));
-          const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q);
-          const res = await fetch(url, { headers: { "User-Agent": "OR/1.0" } });
-          if (!res.ok) { sendResponse({ ok: false, error: `search HTTP ${res.status}` }); break; }
-          const html = await res.text();
-          const results = [];
-          const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-          let m;
-          while ((m = re.exec(html)) !== null && results.length < limit) {
-            let href = m[1]; const title = m[2].trim();
-            const um = href.match(/uddg=([^&]+)/);
-            if (um) try { href = decodeURIComponent(um[1]); } catch {}
-            if (title && href) results.push({ title, url: href });
+          const found = await webSearch(q, limit);
+          if (!found.results.length) {
+            sendResponse({ ok: false, error: `no results for '${q}' (${found.errors.join("; ") || "all engines empty"})` });
+            break;
           }
-          if (!results.length) {
-            const re2 = /class="result__url"[^>]+href="([^"]+)"/g;
-            while ((m = re2.exec(html)) !== null && results.length < limit) results.push({ title: m[1], url: m[1] });
-          }
-          if (!results.length) { sendResponse({ ok: false, error: `no results for '${q}'` }); break; }
-          const txt = results.map((r,i)=> `${i+1}. ${r.title}\n   ${r.url}`).join("\n");
-          sendResponse({ ok: true, text: txt, results, query: q });
+          const txt = found.results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n");
+          sendResponse({ ok: true, text: txt, results: found.results, query: q, engine: found.engine });
         } catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
         break;
       }
@@ -1461,28 +1859,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
         break;
       }
-      case "capture_tab": {
-        try {
-          const windowId = (_sender.tab && _sender.tab.windowId) || undefined;
-          const dataUrl = await new Promise((resolve, reject) => {
-            try {
-              chrome.tabs.captureVisibleTab(windowId, { format: "png" }, (url) => {
-                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-                else resolve(url);
-              });
-            } catch (e) { reject(e); }
-          });
-          const m = String(dataUrl || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-          if (!m) {
-            sendResponse({ ok: false, error: "tab capture returned no image" });
-            break;
-          }
-          sendResponse({ ok: true, images: [{ mimeType: m[1], data: m[2] }] });
-        } catch (e) {
-          sendResponse({ ok: false, error: String(e && e.message || e) });
-        }
-        break;
-      }
       default:
         sendResponse({ ok: false, error: "unknown message" });
     }
@@ -1499,3 +1875,12 @@ chrome.runtime.onStartup.addListener(connect);
 chrome.runtime.onInstalled.addListener(connect);
 
 connect();
+
+// Test hook: the pure web-tool helpers are unit-tested by test-web-tools.js in
+// a plain Node vm (no chrome). Inert in the service worker (no `module`).
+try {
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { webSearch, webHeaders, stripWrappedUrl, cleanText, decodeEntities,
+      htmlToText, parseDdgHtml, parseDdgLite, parseHeadingAnchors, SEARCH_ENGINES };
+  }
+} catch {}

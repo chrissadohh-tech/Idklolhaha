@@ -66,11 +66,14 @@ const manifest = JSON.parse(fs.readFileSync(__dirname + "/manifest.json", "utf8"
 const [maj12, min12] = manifest.version.split(".").map(Number);
 ok("manifest at 1.12.0 or newer", maj12 > 1 || min12 >= 12);
 
-// ── DeepSeek 2026 UI ────────────────────────────────────────────────────────
+// ── DeepSeek 2026-09 unified model (Instant/Expert/Vision merged, picker gone) ─
 ok("deepseek send button has fallbacks", dsSrc.includes("getSendBtn") && dsSrc.includes("contenteditable"));
-ok("deepseek start does not require Expert radios", dsSrc.includes("!state.expertFound && !state.visionFound"));
+ok("deepseek start is not gated on a model tab", dsSrc.includes("const ready = !!getEditor()"));
+ok("deepseek has no model-tab / vision-latch code", !/findExpertRadio|findVisionRadio|modeRadioGroup|expertFound|visionOn|_visLatch|badgeVision/.test(dsSrc));
+ok("deepseek is unconditionally vision-capable", dsSrc.includes("supportsVision: true"));
+ok("deepseek attaches images through the real file input", dsSrc.includes('input[type="file"]') && dsSrc.includes("async function attachImages"));
 ok("deepseek user detect survives hashed-class churn", dsSrc.includes("data-message-author-role") && dsSrc.includes("leftGap"));
-ok("deepseek stamps 2026-09 UI beacon", dsSrc.includes("2026-09_new-ui"));
+ok("deepseek stamps the 2026-09 unified beacon", dsSrc.includes("2026-09_unified"));
 
 // ── v1.12.1 hotfix: the "site crashes after starting agent" freeze ──────────
 // (v1.12.2 removed the worker entirely - the degrade assertions became moot.)

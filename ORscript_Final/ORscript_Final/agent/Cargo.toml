@@ -1,6 +1,6 @@
 [package]
 name = "or-agent"
-version = "1.18.0"
+version = "1.18.1"
 edition = "2021"
 description = "OR native agent — Roblox Studio MCP + AgentScript workspace bridge"
 license = "GPL-3.0-or-later"
