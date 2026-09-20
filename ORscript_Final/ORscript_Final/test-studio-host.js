@@ -375,14 +375,6 @@ ok("or-figma-plugin ships manifest.json and code.js for Figma desktop",
   fs.existsSync(path.join(__dirname, "or-figma-plugin", "manifest.json")) &&
   fs.existsSync(path.join(__dirname, "or-figma-plugin", "code.js")));
 
-ok("Plugin and prompt contain full Figma command suite",
-  cfgJS.includes("figma_create_frame") &&
-  cfgJS.includes("figma_create_button") &&
-  cfgJS.includes("figma_set_autolayout") &&
-  cfgJS.includes("figma_set_stroke") &&
-  cfgJS.includes("figma_export_tree") &&
-  fs.readFileSync(path.join(__dirname, "or-figma-plugin", "code.js"), "utf8").includes("figma_create_button"));
-
 ok("System prompt includes Figma to Roblox Studio automated pipeline instructions",
   cfgJS.includes("FIGMA TO ROBLOX STUDIO PIPELINE"));
 

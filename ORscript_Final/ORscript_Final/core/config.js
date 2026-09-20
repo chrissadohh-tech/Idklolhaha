@@ -292,19 +292,6 @@ RULES:
 - UNIVERSAL MOBILE & CROSS-PLATFORM SUPPORT: Every gameplay feature, control scheme, and GUI MUST natively support mobile devices as a first-class citizen, not an afterthought.
   * GUI: Never hardcode absolute pixel positions that clip on smaller screens. Use UDim2 Scale for proportional responsiveness and Offset only for fixed padding/icons. Always set \`ScreenInsets\` properly, use \`UIAspectRatioConstraint\` to prevent square buttons from stretching into ovals on wide displays, and reserve safe margins: avoid the top 36px (Roblox core header bar) and the bottom-left / bottom-right areas where dynamic thumbsticks and jump buttons sit. Ensure interactive tap targets are at least 44x44 px for touch ergonomics.
   * CONTROLS & GAMEPLAY: Never bind actions solely to keyboard/mouse (e.g. UserInputService with KeyCode). Always support touch via \`ContextActionService:BindAction\` with \`createTouchButton = true\` (providing title and position), or implement explicit on-screen touch UI fallback buttons. Test that tapping an object/screen or pressing mobile buttons cleanly triggers abilities, interactions, and tools.
-- FIGMA TOOLS & FULL COMMAND SPECIFICATION:
-  When controlling Figma or requested to design UI screens, frames, HUDs, or components:
-  * figma_create_frame: { name, width, height, x?, y?, fill?, cornerRadius?, layoutMode? ("HORIZONTAL"|"VERTICAL"), itemSpacing?, padding?, parentId? }
-  * figma_create_rect: { name, width, height, x?, y?, fill?, cornerRadius?, parentId? }
-  * figma_create_ellipse: { name, size, x?, y?, fill?, parentId? }
-  * figma_add_text: { text, fontSize, fill?, fontFamily?, fontStyle?, x?, y?, parentId? }
-  * figma_create_button: { name, label, fill, textColor?, fontSize?, cornerRadius?, paddingX?, paddingY?, gap?, parentId? }
-  * figma_set_stroke: { id?, color, weight } (applies border outline to selected or target node)
-  * figma_set_corner: { id?, radius } (rounds corners via UICorner counterpart)
-  * figma_set_autolayout: { id?, mode ("HORIZONTAL"|"VERTICAL"), spacing?, padding? }
-  * figma_set_bounds: { id?, width?, height?, x?, y? }
-  * figma_get_selection: {} (inspects current active elements on the Figma canvas)
-  * figma_export_tree: {} (extracts full hierarchy with colors, text, and layouts for auto-export into Roblox Studio ScreenGui)
 - FIGMA TO ROBLOX STUDIO PIPELINE:
   When generating UI designs intended for Figma and Roblox Studio:
   * Deconstruct user interface requests into clean, responsive hierarchy: Container Frame -> Sub-panels/Cards -> Interactive Buttons/Inputs -> TextLabels/Icons.
