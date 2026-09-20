@@ -42,7 +42,7 @@ const RSProvider = (() => {
     userMod: "d29f3d7d", // hashed modifier on user turns (one-liner to update if DeepSeek redeploys)
     userBubble: ".fbb737a4, [data-role='user']", // user text bubble (secondary signal)
     box: ".ds-markdown",
-    editor: "textarea, [contenteditable='true']",
+    editor: "textarea",
     // The inline "edit this message" box is DeepSeek's design-system bordered
     // textarea (.ds-textarea--bordered), mounted UP in the turn list. The bottom
     // composer is NOT wrapped in one - so this scopes getEditor() away from it.
@@ -170,24 +170,27 @@ const RSProvider = (() => {
   // send hooks and letting them swallow the DeepSeek "Log in" click (which is
   // itself a .ds-button--primary, the same selector as the send button).
   const getEditor = () => {
-    // 1. Direct ID / dedicated chat-input selector if present
-    const byId = document.querySelector("#chat-input, textarea[placeholder*='DeepSeek' i], textarea[placeholder*='Message' i]");
-    if (byId && !byId.closest("#rs-root")) return byId;
+    // Collect all textareas on the page, excluding our own injected UI and sidebars/navigation
+    const all = [...document.querySelectorAll("textarea")].filter((e) => {
+      if (e.closest("#rs-root")) return false;
+      if (e.closest("aside") || e.closest("nav") || e.closest("[class*='sidebar']")) return false;
+      if (e.closest(S.msgEditBox)) return false;
+      return true;
+    });
 
-    const site = [...document.querySelectorAll(S.editor)].filter(
-      (e) => !e.closest("#rs-root") && e.offsetParent !== null && !e.closest("aside") && !e.closest("nav")
-    );
+    if (!all.length) return null;
 
-    // If visible candidates exist, sort bottom-most first so sidebar/header inputs aren't picked
-    if (site.length > 1) {
-      site.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
-    }
+    // Filter to visible candidates
+    const visible = all.filter((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 120 && r.height > 15 && r.top < window.innerHeight;
+    });
 
-    const ta = site.find((e) => e.tagName === "TEXTAREA" && !e.closest(S.msgEditBox));
-    if (ta) return ta;
-    const ce = site.find((e) => e.getAttribute("contenteditable") === "true" &&
-      !e.closest(S.chatItem) && !e.closest(S.msgEditBox));
-    return ce || site.find((e) => !e.closest(S.msgEditBox)) || site[0] || null;
+    const pool = visible.length ? visible : all;
+
+    // Sort bottom-most first: the chat composer is always at the bottom of the screen
+    pool.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
+    return pool[0];
   };
   // Composer may be a <textarea> (classic) or contenteditable (2026 UI).
   const editorText = () => {
@@ -313,13 +316,6 @@ const RSProvider = (() => {
   // ancestor of the textarea that also holds the send button.
   // It is a flex column whose second child is the buttons row (send, web, DeepThink),
   // so adding the bar as its FIRST child reflows cleanly and spans the full input width.
-    // Where the core anchors its floating/padding bar if DOM-injection is avoided
-  function barAnchor() {
-    const ta = getEditor();
-    if (!ta) return null;
-    return ta.closest("form") || ta.closest("[class*='chat-input']") || ta.closest("[class*='composer']") || ta.parentElement;
-  }
-
 function barMount() {
     const ta = getEditor();
     if (!ta) return null;
@@ -327,15 +323,13 @@ function barMount() {
     let box = ta.parentElement;
     while (box && box !== document.body) {
       const holdsSend = !send || box.contains(send);
-      // The composer card must contain the textarea and the send button, and be at least 260px wide
-      if (holdsSend && (box.offsetWidth > 260 || (box.getBoundingClientRect && box.getBoundingClientRect().width > 260))) {
+      const r = box.getBoundingClientRect();
+      if (holdsSend && r.width > 280 && r.height > 35) {
         break;
       }
       box = box.parentElement;
     }
-    if (!box || box === document.body) {
-      box = ta.closest("form") || ta.closest("[class*='chat-input']") || ta.parentElement;
-    }
+    if (!box || box === document.body) box = ta.parentElement;
     if (!box) return null;
     let before = box.firstElementChild;
     if (before && before.id === "rs-bar") before = before.nextElementSibling;
@@ -969,7 +963,7 @@ function barMount() {
     assistantCount, userCount, lastAssistant, lastAssistantId, itemKey, readAssistant,
     streamLen, snapshot,
     // composer / state
-    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount, barAnchor,
+    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount,
     setInputLock, typeAndSend, stopGeneration,
     isGenerating, isBusyNow, isHardGenerating, genDebug,
     enforceComposer, ensureComposerReady,
