@@ -5509,3 +5509,63 @@ html.rs-light #rs-cards-rng:hover {
 #rs-mcp-menu[hidden] {
   display: none !important;
 }
+
+/* ── Horizontal Modern Layout for Settings & Controls ── */
+#rs-menu, #rs-mcp-menu {
+  width: 480px !important;
+  max-width: calc(100vw - 32px) !important;
+  border-radius: 18px !important;
+  padding: 0 0 12px !important;
+  box-sizing: border-box !important;
+}
+
+/* Horizontal sliders & rows */
+.rs-tgl-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 8px 12px !important;
+}
+
+.rs-tgl-info {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+.rs-work-row, .rs-diag-row, .rs-ref-mode-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.rs-work-card, .rs-diag-btn, .rs-ref-mode-btn {
+  flex: 1 !important;
+  text-align: center !important;
+}
+
+/* Horizontal Thinking Level slider row */
+.rs-thinking-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 6px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.rs-lvl-btn {
+  flex: 1 !important;
+  padding: 6px 4px !important;
+  text-align: center !important;
+  font-size: 11px !important;
+}
+
+/* Horizontal switch row */
+.rs-tgl {
+  flex-shrink: 0 !important;
+}

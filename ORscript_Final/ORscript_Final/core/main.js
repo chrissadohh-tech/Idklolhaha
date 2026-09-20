@@ -6917,10 +6917,8 @@ function renderCards(panel) {
     // we fall back to the floating bar rather than risk overlapping its layout.
     function computeBarMount() {
       if (!P.barMount) return null;
-      try {
-        const m = P.barMount();
-        return (m && m.parent && m.parent.isConnected) ? m : null;
-      } catch (e) { try { log("barMount threw", e); } catch {} return null; }
+      const m = P.barMount();
+      return (m && m.parent && m.parent.isConnected) ? m : null;
     }
 
     // Floating fallback geometry (used only when no inline mount is available).
@@ -6929,23 +6927,15 @@ function renderCards(panel) {
     // Anchored mode bookkeeping: the composer element whose top padding we are
     // borrowing to seat the bar (see the anchored branch below). Cleared when we
     // leave anchored mode so the site's composer returns to its normal layout.
-    let anchorPadEl = null, inlineWidenEl = null;
+    let anchorPadEl = null;
     function clearAnchorPad() {
-      if (anchorPadEl) { try { anchorPadEl.style.paddingTop = ""; anchorPadEl.style.maxWidth = ""; anchorPadEl.style.width = ""; anchorPadEl.style.marginLeft = ""; anchorPadEl.style.marginRight = ""; } catch {} anchorPadEl = null; }
-      if (inlineWidenEl) { try { inlineWidenEl.style.maxWidth = ""; inlineWidenEl.style.width = ""; inlineWidenEl.style.marginLeft = ""; inlineWidenEl.style.marginRight = ""; } catch {} inlineWidenEl = null; }
+      if (anchorPadEl) { try { anchorPadEl.style.paddingTop = ""; } catch {} anchorPadEl = null; }
     }
 
-    // Inline unstable pill lives inside the bar — no floating positioning needed.
-    // Keep it visible when the bar is visible and the provider is marked unstable.
+    // Position the floating "⚠ unstable" pill just above the bar's left edge.
     function placeUnstable() {
       const u = unstableEl;
       if (!u) return;
-      // If it's the inline pill, just ensure it reflects P.unstableWarning and bar visibility
-      if (u.id === "rs-unstable-inline") {
-        const shouldShow = !!P.unstableWarning && bar && bar.style.display !== "none" && bar.getBoundingClientRect().width > 0;
-        u.hidden = !shouldShow;
-        return;
-      }
       if (!bar || bar.style.display === "none") { if (!u.hidden) u.hidden = true; return; }
       const br = bar.getBoundingClientRect();
       if (!br.width) { if (!u.hidden) u.hidden = true; return; }
@@ -6953,86 +6943,6 @@ function renderCards(panel) {
       const uh = u.offsetHeight || 20;
       u.style.left = Math.round(br.left) + "px";
       u.style.top = Math.round(Math.max(4, br.top - uh - 5)) + "px";
-    }
-
-    // The cards fab is a fixed SQUARE floating left of the chatbox, vertically
-    // centered on the composer card (barAnchor = the rounded chatbox on every
-    // site; falls back to composerFrame/editor/bar strip). Re-measured every
-    // rAF tick (1-frame lag).
-    const FAB_SIZE = 52;
-    let fabThemeTick = 0, fabActivityTick = 0;
-    function parseRgb(str) {
-      const m = str && str.match(/rgba?\(([^)]+)\)/);
-      if (!m) return null;
-      const p = m[1].split(",").map((s) => parseFloat(s));
-      if (p.length < 3 || p.some((n) => isNaN(n))) return null;
-      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
-    }
-    // Mirror the host chatbox surface onto the FAB so it reads as native
-    // chrome on every site: sample the anchor's computed background (walking
-    // up past transparent shells), expose it as CSS custom properties (so
-    // :hover rules still work), and tag light/dark for icon contrast.
-    function syncFabTheme(fit) {
-      try {
-        let el = fit, bg = null, hops = 0;
-        while (el && hops < 5) {
-          const c = parseRgb(getComputedStyle(el).backgroundColor);
-          if (c && c.a >= 0.04) { bg = c; break; }
-          el = el.parentElement; hops++;
-        }
-        if (!bg) { // nothing solid found — back to the default glass
-          cardsBtn.style.removeProperty("--fab-bg");
-          cardsBtn.style.removeProperty("--fab-ring");
-          cardsBtn.removeAttribute("data-lum");
-          return;
-        }
-        const lum = 0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b;
-        const light = lum > 150;
-        const mix = (v) => Math.round(Math.max(0, Math.min(255, v)));
-        const ring = light ? "rgba(15,23,42,0.14)" : "rgba(255,255,255,0.10)";
-        const tint = light
-          ? `rgba(${mix(bg.r - 8)},${mix(bg.g - 8)},${mix(bg.b - 8)},${Math.min(1, bg.a)})`
-          : `rgba(${mix(bg.r + 10)},${mix(bg.g + 10)},${mix(bg.b + 12)},${Math.min(1, bg.a + 0.06)})`;
-        cardsBtn.style.setProperty("--fab-bg", tint);
-        cardsBtn.style.setProperty("--fab-ring", ring);
-        cardsBtn.setAttribute("data-lum", light ? "light" : "dark");
-      } catch {}
-    }
-    function placeCardsFab() {
-      try {
-        if (!cardsBtn || !bar) return;
-        const br = bar.getBoundingClientRect();
-        if (bar.style.display === "none" || !br.width) {
-          cardsBtn.style.display = "none";
-          return;
-        }
-        let fit = null;
-        try { fit = (P.barAnchor && P.barAnchor()) || null; } catch {}
-        if (!fit || !fit.isConnected) { try { fit = (P.composerFrame && P.composerFrame()) || null; } catch {} }
-        if (!fit || !fit.isConnected) { fit = (P.getEditor && P.getEditor()) || null; }
-        if (!fit || !fit.isConnected) {
-          fit = bar.parentElement;
-          if (fit === root || fit === document.documentElement) fit = null;
-        }
-        let fr = fit ? fit.getBoundingClientRect() : null;
-        if (!fr || !fr.height || fr.height < br.height) fr = br;
-        if (!fr || !fr.width || fr.left < 0) {
-          cardsBtn.style.display = "none";
-          return;
-        }
-        cardsBtn.style.display = "";
-        let left = fr.left - FAB_SIZE - 10;
-        if (left < 8) left = 8;
-        const top = fr.top + (fr.height - FAB_SIZE) / 2;
-        cardsBtn.style.left = Math.round(left) + "px";
-        cardsBtn.style.top = Math.round(top) + "px";
-        fabThemeTick++;
-        if (fit && fabThemeTick % 30 === 1) syncFabTheme(fit);
-        if (cardsPanel && !cardsPanel.hidden && (cardsTab === "activity" || activeEngine() === "local") && recentCards.length) {
-          fabActivityTick++;
-          if (fabActivityTick % 300 === 0) renderCards(cardsPanel);
-        }
-      } catch (err) {}
     }
 
     function placeBar() {
@@ -7054,7 +6964,6 @@ function renderCards(panel) {
       // bar's current rect every frame - works in all bar modes since it only
       // reads where the bar ended up. One frame of lag is imperceptible.
       placeUnstable();
-      placeCardsFab();
 
       // While a bot-check challenge OR a blocking modal (login / consent) is on
       // screen, get fully out of the way: the (often transparent) anchored bar is
@@ -7093,12 +7002,6 @@ function renderCards(panel) {
           menuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
           menuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
         }
-        if (mcpMenuEl && !mcpMenuEl.hidden) {
-          const br = bar.getBoundingClientRect();
-          mcpMenuEl.style.right = Math.round(window.innerWidth - br.right + 32) + "px";
-          mcpMenuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
-          mcpMenuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
-        }
         return;
       }
 
@@ -7131,12 +7034,6 @@ function renderCards(panel) {
           menuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
           menuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
         }
-        if (mcpMenuEl && !mcpMenuEl.hidden) {
-          bar.classList.remove("rs-bar-inline");
-          mcpMenuEl.style.right = Math.round(window.innerWidth - (r.left + r.width) + 32) + "px";
-          mcpMenuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
-          mcpMenuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
-        }
         return;
       }
       bar.classList.remove("rs-bar-anchored");
@@ -7153,9 +7050,7 @@ function renderCards(panel) {
       // No composer yet (or 0-width during layout): keep the bar on screen so
       // the agent is never "gone". Dock it to the bottom of the viewport.
       const r = f && f.isConnected ? f.getBoundingClientRect() : null;
-      // If composer is missing, unlaid-out (0 width), or scrolled off-screen / at top (0,0),
-      // dock safely above the bottom of the viewport so the bar NEVER jumps to the top corner.
-      if (!f || !r || !r.width || r.top <= 10 || r.bottom <= 20) {
+      if (!f || !r || !r.width) {
         const w = Math.min(window.innerWidth - 24, BAR_MAX_W);
         const bh = bar.offsetHeight || 40;
         bar.style.width = w + "px";
@@ -7177,14 +7072,10 @@ function renderCards(panel) {
         menuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
         menuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
       }
-      if (mcpMenuEl && !mcpMenuEl.hidden) {
-        const br = bar.getBoundingClientRect();
-        mcpMenuEl.style.right = Math.round(window.innerWidth - br.right + 32) + "px";
-        mcpMenuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
-        mcpMenuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
-      }
     }
 
+    // Called by the core's sweep + after state changes: refresh the bar content.
+    // (Positioning runs continuously in placeBar; this only updates what's shown.)
     function updateStartGate() { renderBar(); }
 
     // Masks the input box while the extension types/sends, so the copied text
