@@ -170,14 +170,19 @@ const RSProvider = (() => {
   // send hooks and letting them swallow the DeepSeek "Log in" click (which is
   // itself a .ds-button--primary, the same selector as the send button).
   const getEditor = () => {
+    // 1. Direct ID / dedicated chat-input selector if present
+    const byId = document.querySelector("#chat-input, textarea[placeholder*='DeepSeek' i], textarea[placeholder*='Message' i]");
+    if (byId && !byId.closest("#rs-root")) return byId;
+
     const site = [...document.querySelectorAll(S.editor)].filter(
-      (e) => !e.closest("#rs-root") && e.offsetParent !== null
+      (e) => !e.closest("#rs-root") && e.offsetParent !== null && !e.closest("aside") && !e.closest("nav")
     );
-    // Prefer the bottom composer over the inline message-EDIT box. When the user
-    // edits a turn, DeepSeek mounts a bordered .ds-textarea up in the turn list;
-    // it precedes the composer in DOM order, so the old "first textarea" pick
-    // returned it - and barMount() then dragged the whole OR bar INTO the
-    // editor. Skip any textarea inside that DS component; the composer isn't one.
+
+    // If visible candidates exist, sort bottom-most first so sidebar/header inputs aren't picked
+    if (site.length > 1) {
+      site.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
+    }
+
     const ta = site.find((e) => e.tagName === "TEXTAREA" && !e.closest(S.msgEditBox));
     if (ta) return ta;
     const ce = site.find((e) => e.getAttribute("contenteditable") === "true" &&
@@ -315,7 +320,7 @@ const RSProvider = (() => {
     let box = ta.parentElement;
     while (box && box !== document.body) {
       const holdsSend = !send || box.contains(send);
-      if (holdsSend) break;
+      if (holdsSend && box.offsetWidth > 240) break;
       box = box.parentElement;
     }
     if (!box || box === document.body) box = ta.parentElement;
