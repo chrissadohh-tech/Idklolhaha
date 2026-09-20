@@ -292,21 +292,6 @@ RULES:
 - UNIVERSAL MOBILE & CROSS-PLATFORM SUPPORT: Every gameplay feature, control scheme, and GUI MUST natively support mobile devices as a first-class citizen, not an afterthought.
   * GUI: Never hardcode absolute pixel positions that clip on smaller screens. Use UDim2 Scale for proportional responsiveness and Offset only for fixed padding/icons. Always set \`ScreenInsets\` properly, use \`UIAspectRatioConstraint\` to prevent square buttons from stretching into ovals on wide displays, and reserve safe margins: avoid the top 36px (Roblox core header bar) and the bottom-left / bottom-right areas where dynamic thumbsticks and jump buttons sit. Ensure interactive tap targets are at least 44x44 px for touch ergonomics.
   * CONTROLS & GAMEPLAY: Never bind actions solely to keyboard/mouse (e.g. UserInputService with KeyCode). Always support touch via \`ContextActionService:BindAction\` with \`createTouchButton = true\` (providing title and position), or implement explicit on-screen touch UI fallback buttons. Test that tapping an object/screen or pressing mobile buttons cleanly triggers abilities, interactions, and tools.
-- FIGMA TO ROBLOX STUDIO PIPELINE:
-  When generating UI designs intended for Figma and Roblox Studio:
-  * Full Figma command suite: figma_create_frame, figma_create_rect, figma_create_ellipse, figma_add_text, figma_create_button, figma_set_stroke, figma_set_corner, figma_set_autolayout, figma_set_bounds, figma_get_selection, figma_export_tree.
-  * In Figma mode, design with Auto-Layout flex configurations, exact corner radius, strokes, and color palettes.
-  * When exporting, immediately translate into responsive strict Luau (--!strict) ScreenGui with UDim2 Scale + UIAspectRatioConstraint and ContextActionService touch controls for Roblox Studio.
-- ROBLOX STUD BUILD & RETRO AESTHETIC SPECIFICATION:
-  A Roblox stud build is a highly specialized, retro-themed construction aesthetic that meticulously mirrors the platform's foundational 2006–2012 era. It is defined by primitive, hard-edged 3D geometry covered in visible, raised circular or square bump textures ("studs") that directly emulate real-world LEGO bricks. To systematically design and assemble a stud animal or build within this rigid framework:
-  * UNYIELDING SPATIAL GRID: Treat Roblox's fundamental unit of measurement—the stud (0.28 meters / 20 horizontal pixels in legacy scaling)—as both an unyielding spatial grid and a mandatory visual skin. Enforce absolute grid-snapping constraints locked to strict, uniform increments of 1.0, 0.5, or 0.25 studs. Arbitrary decimal positioning is strictly outlawed to eliminate microscopic overlapping, intersecting clipping errors, or smooth organic curves.
-  * HIERARCHICAL PRIMITIVE DECOMPOSITION: Mentally deconstruct the natural form into a strictly hierarchical assembly of blocky, primitive geometric shapes:
-    - Torso: a massive, central rectangular prism (\`Part\`).
-    - Appendages: four identical, vertically oriented rectangular columns or cylinders acting as legs.
-    - Cranium: a distinct, proportional cube or rectangle offset forward from the torso.
-    - Features: pointed ears, blocky snout, rigid jaw, or stepped tail generated using sharp, right-angled triangular blocks (\`Wedges\`, \`CornerWedges\`, or \`Trusses\`).
-  * SURFACE TEXTURE MANIPULATION: Assign a traditional \`Studs\` surface type (\`TopSurface = Enum.SurfaceType.Studs\`) to the top-facing plane (Y-up axis) of every single part, a complementary \`Inlets\` surface type (\`BottomSurface = Enum.SurfaceType.Inlets\` — hollow cylindrical sockets) to the bottom-facing plane (Y-down axis), and leave side walls completely flat (\`SmoothNoOutlines\` / \`Smooth\`) or vertically grooved (\`Universal\`), creating the physical illusion of mechanical connectivity and physical toy friction. Smaller features (e.g. 1x1x1 snout, 1x2x1 ear) must line up seamlessly with the stud grid lines of the parent block below them so studs perfectly nestle into inlets.
-  * LOW-FIDELITY MATERIAL & PALETTE: Restrict materials strictly to vintage, low-specular, non-reflective \`Plastic\` or \`SmoothPlastic\`. Paint instances using highly saturated, legacy Roblox BrickColor palettes (Bright Red, Bright Yellow, Bright Blue, Dark Green, Medium Stone Grey, etc.). Explicitly NEVER use modern optimization features, smooth custom meshes (\`MeshParts\`), vertex deformation, custom texture maps (\`SurfaceAppearance\`), PBR lighting, smooth spherical curves, or dynamic shadows. The finished build must look like a rigid, tangible, block-by-block toy built by a player in 2008.
 
  ━━━ PROJECT MEMORY (persistent notes — engine-tagged when dualMemory flag is on) ━━━
 ${FLAGS.dualMemory ? `You have TWO memories, one per engine. Pick by the current engine (RS vs AS):
@@ -374,18 +359,6 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
       if (isExtra) modeExtra += `\n\n━━━ EXTRA THINKING MODE (user enabled via 🧠 button after Start) ━━━\nYou are in Extra Thinking mode. This is mandatory, not optional. After every script or GUI change: (1) list 2-3 flaws or edge cases in one short paragraph, (2) FIX them with another command, (3) verify with script_read / ui_list_tree / inspect_instance. Do not declare done until a verify command succeeded. Keep critiques short.`;
       if (isPlan) modeExtra += `\n\n━━━ PLAN MODE (user enabled) ━━━\nYou are in Plan Mode. Before any mutating command, your FIRST reply is a written plan — not a command.\nPLAN format:\n- Goal (one sentence)\n- Architecture: services, remotes, GUI tree, Server vs Local scripts\n- Ordered steps (3–8), each step = one later command\n- Risks: respawn, mobile, Play vs Edit\nThe plan must list implied systems the request needs to be complete, not only the words they typed. Then implement. Every script is production code: clear names, early returns, WaitForChild with timeouts, no TODO stubs, no leftover prints, no default grey Frame standing in for UI. Match existing project style when you can read it first. Do not skip the plan even if the task looks small.`;
       if (isDebug) modeExtra += `\n\n━━━ AUTOMATIC DEBUGGER (user enabled) ━━━\nAfter mutating Studio commands, OR may append [AUTO DEBUG] with new Output errors. Treat those as the next job: smallest fix, then or_debug {} to verify. Call or_debug yourself when unsure.`;
-            const isTweak = (typeof window !== "undefined" && window.__rsTweakMode && window.__rsTweakMode()) || false;
-      if (isTweak) {
-        modeExtra += `\n\n━━━ TWEAK MODE ACTIVE (RULES RE-STATEMENT & RIGOROUS ENFORCEMENT) ━━━\n` +
-          `Tweak Mode is ENABLED. You are reminded of all primary non-negotiable rules:\n` +
-          `1. MATHEMATICAL REASONING: Always calculate and use formulas, geometry, physics, and vectors over estimation.\n` +
-          `2. STRICT TYPING: Every script begins with --!strict and explicit types.\n` +
-          `3. SERVER AUTHORITY: Validate all client remotes (distances, cooldowns, currency, state).\n` +
-          `4. MEMORY CLEANUP: Disconnect all connections, stop tasks, prevent leaks.\n` +
-          `5. UNIVERSAL MOBILE SUPPORT: Responsive UDim2 Scale + UIAspectRatioConstraint, 44x44px touch targets, ContextActionService.\n` +
-          `6. STUD BUILD STANDARDS: Strict grid snapping (1.0, 0.5, 0.25 studs), TopSurface Studs, BottomSurface Inlets, Plastic material, legacy palette when building retro objects.`;
-      }
-
       if (isMulti) modeExtra += `\n\n━━━ MULTI-AGENT (user enabled) ━━━\nYou coordinate specialist agents via or_agent {role, task}. Roles: planner (plan only, no mutations), builder (ONE mutating command), reviewer (read-only inspect), debugger (or_debug then smallest fix). Start as planner unless a role is already assigned. Hand off with or_agent — do not play every role in one reply.`;
       const diagLevel = (window.__rsDiagDebug && window.__rsDiagDebug()) || "off";
       if (diagLevel !== "off") {
@@ -417,32 +390,7 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
       } catch {}
       if (isExtra || isForge) modeExtra += `\n(Auto-fix is watching Playtest Output — if a PLAYTEST ERROR is auto-injected, fix it immediately.)`;
     } catch {}
-    // ── Persistent Visual Reference (Text Guidance & Math Specs) ──
-    let visualRefDirective = "";
-    try {
-      const vRef = (typeof window !== "undefined" && typeof window.__rsVisualRef === "function") ? window.__rsVisualRef() : null;
-      if (vRef && vRef.active && vRef.enabled !== false) {
-        const mode = vRef.mode === "build" ? "BUILD / 3D MODEL" : "GUI (GRAPHICAL USER INTERFACE)";
-        visualRefDirective = `\n\n━━━ PERSISTENT VISUAL REFERENCE: ${mode} ━━━\n` +
-          `A visual reference target has been designated by the user in Settings as the active standard for this ${mode}.\n` +
-          `Goal: build with MAXIMUM fidelity and MATHEMATICAL ACCURACY until the result in Studio is identical or identically close.\n\n` +
-          (vRef.mode === "build"
-            ? `BUILD REPRODUCTION RULES (MATHEMATICALLY ACCURATE):\n` +
-              `1. DECOMPOSE: Break down the target model into geometric volumes, bounding boxes, and symmetry planes.\n` +
-              `2. SCALE & PROPORTIONS: Calibrate against Roblox standards (standard humanoid height ≈ 5 studs). Calculate exact proportional ratios (width:height:depth) rather than guessing.\n` +
-              `3. MEASUREMENTS & ALIGNMENT: Calculate exact CFrame offsets, surface normals, angles (in degrees/radians), and stud dimensions.\n` +
-              `4. ITERATIVE VERIFICATION: After constructing with execute_luau / primitives / meshes, call screen_capture {} to view your current Studio build. Measure discrepancies in silhouette, proportion ratios, bevels/angles, and colors. Refine until matching.\n`
-            : `GUI REPRODUCTION RULES (STRICT MATHEMATICAL CALCULATIONS):\n` +
-              `1. CANVAS RATIO & SCREEN DECOMPOSITION: Compute exact bounding-box percentages for every element.\n` +
-              `2. EXACT UDim2 MATHEMATICS: Use strict mathematical formulas for UDim2 (Scale for proportional responsiveness, Offset for fixed padding/borders/icons). Calculate exact Scale values: PosX = ItemX / CanvasWidth, SizeX = ItemWidth / CanvasWidth.\n` +
-              `3. ALIGNMENT, SYMMETRY & PADDING: Calculate pixel-exact margins, element gaps, and padding. Utilize UIListLayout / UIGridLayout with mathematically calculated Padding UDim, or compute explicit AnchorPoint (e.g. Vector2.new(0.5, 0.5) for center alignment).\n` +
-              `4. COLOR & STYLING METRICS: Match exact UICorner CornerRadius (px), UIStroke Thickness (px) & Color, UIGradient Rotation & Keypoints, and Font face/weights.\n` +
-              `5. ITERATIVE SCREENSHOT REFINEMENT: After creating or updating the GUI via execute_luau, immediately take a screen_capture {} of the Studio viewport to verify layout and color metrics. Refine until mathematically and visually identical.\n`
-          ) +
-          (vRef.notes ? `User Reference Notes: ${vRef.notes}\n` : "");
-      }
-    } catch (eRef) {}
-
+    // ── Visual Reference Directive (Persistent Reference Image in Settings) ──
     const siteRules = providerNotes.trim()
       ? `\n\n━━━ ADDITIONAL RULES FOR THIS SITE ━━━\n${providerNotes.trim()}`
       : "";
@@ -454,10 +402,10 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
       : "";
 
     // The marker leads the prompt; it tags the bootstrap turn for camouflage.
-    const full = `${SYS_MARKER}\n${prompt}${modeExtra}${visualRefDirective}${personaExtra}${siteRules}${extra}`;
+    const full = `${SYS_MARKER}\n${prompt}${modeExtra}${personaExtra}${siteRules}${extra}`;
     if (maxChars && full.length > maxChars) {
       const compactCore = buildCompactPrompt({ siteName });
-      const compactFull = `${SYS_MARKER}\n${compactCore}${modeExtra}${visualRefDirective}${personaExtra}${siteRules}${extra}`;
+      const compactFull = `${SYS_MARKER}\n${compactCore}${modeExtra}${personaExtra}${siteRules}${extra}`;
       if (compactFull.length < full.length) return compactFull;
     }
     return full;

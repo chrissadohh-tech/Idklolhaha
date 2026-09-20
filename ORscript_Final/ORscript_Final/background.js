@@ -122,13 +122,6 @@ let blenderAddon = false; // Blender is connected (either transport below)
 // arrive as MCP image content items). "tcp" = the direct socket to the Blender
 // addon on 9876, which OR's own convenience ops still use.
 let blenderMode = "";
-let figmaConnectedState = false;
-async function connectFigma() {
-  figmaConnectedState = true;
-  try { chrome.storage.local.set({ rsFigmaConnected: true }); } catch {}
-  return { ok: true, figma: true };
-}
-
 let blenderError = "";
 // The command that hosts blender-mcp; overridable via chrome.storage
 // "rs-blender-mcp-cmd" for uvx/pipx/manual installs.
@@ -1050,7 +1043,7 @@ async function connectBlender() {
       blenderMode = "mcp";
       setBlender(true, "");
       try {
-        const ping = await blenderCall("get_scene_info", { user_prompt: "inspect scene" }, 20000);
+        const ping = await blenderCall("get_scene_info", {}, 20000);
         if (ping && ping.ok === false) {
           setBlender(false, ping.error);           // server up, Blender addon not
           broadcastStatus();
@@ -1076,7 +1069,7 @@ async function connectBlender() {
   blenderMode = "tcp";
   setBlender(true, "");
   try {
-    const ping = await blenderCall("get_scene_info", { user_prompt: "inspect scene" }, 20000);
+    const ping = await blenderCall("get_scene_info", {}, 20000);
     if (ping && ping.ok === false && /not listening|closed|refused|10061|Connection refused/i.test(String(ping.error || ""))) {
       setBlender(false, ping.error);
       broadcastStatus();
@@ -1300,11 +1293,7 @@ async function blenderCall(name, args, timeout) {
     // path, so nothing that worked before stops working.
     const bareM = String(name || "").split("/").pop().split(".").pop();
     if (blenderMode === "mcp" && BLENDER_MCP_TOOLS.has(bareM)) {
-      const mcpArgs = Object.assign({}, args || {});
-      if (!mcpArgs.user_prompt && (bareM === "get_scene_info" || bareM === "get_object_info")) {
-        mcpArgs.user_prompt = "inspect scene";
-      }
-      const r = await send({ type: "call_tool", name: bareM, arguments: mcpArgs, timeout: timeout || 120000 }, (timeout || 120000) + 10000);
+      const r = await send({ type: "call_tool", name: bareM, arguments: args || {}, timeout: timeout || 120000 }, (timeout || 120000) + 10000);
       if (r && r.ok) return { ok: true, text: String(r.text || ""), images: r.images || [] };
       if (r && r.kind !== "disconnected") return { ok: false, error: String((r && r.error) || "blender MCP call failed") };
       // Bridge down: fall through to the direct socket rather than dead-ending.
@@ -1640,20 +1629,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "blender_status": {
         sendResponse({ ok: blenderAddon, blender: blenderAddon, mode: blenderMode || undefined, error: blenderError || undefined });
-        break;
-      }
-            case "figma_connect": {
-        sendResponse(await connectFigma());
-        break;
-      }
-      case "figma_status": {
-        sendResponse({ ok: figmaConnectedState, figma: figmaConnectedState });
-        break;
-      }
-      case "figma_disconnect": {
-        figmaConnectedState = false;
-        try { chrome.storage.local.set({ rsFigmaConnected: false }); } catch {}
-        sendResponse({ ok: true, figma: false });
         break;
       }
       case "blender_disconnect": {

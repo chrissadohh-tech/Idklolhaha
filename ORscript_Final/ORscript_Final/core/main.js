@@ -3109,7 +3109,7 @@
     if (A.forceSysResend) return true;   // mode toggled (Forge/Extra) — restate NOW
     if (!RESEND_SYS_EVERY) return false;
     const { users, results } = sinceLastSys();
-    const due = (tweakMode && results >= 3) || users >= RESEND_SYS_EVERY || results >= RESEND_SYS_EVERY_RESULTS;
+    const due = users >= RESEND_SYS_EVERY || results >= RESEND_SYS_EVERY_RESULTS;
     // Logged sparsely on purpose: this is consulted on EVERY tool result, and an
     // entry each time would flush the 300-slot diag ring of everything else -
     // exactly the history you need when something goes wrong. The verdict turn
@@ -4294,21 +4294,7 @@
     // All four persist. The loads below restore the user's choices after a
     // reload - they used to silently reset to these defaults on every page
     // refresh because only the setters ever touched chrome.storage.
-    // ── Persistent Visual Reference in Settings (Compact & Non-Intrusive) ──
-    let visualRef = {
-      active: false,
-      mode: "gui", // "gui" | "build"
-      data: "",     // base64 image data
-      mimeType: "image/jpeg",
-      preview: "",  // shrunk thumbnail dataUrl
-      name: "",
-      notes: "",
-      width: 0,
-      height: 0
-    };
-    try { window.__rsVisualRef = () => visualRef; } catch {}
-
-    let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false, tweakMode = false;
+    let autoFixEnabled = true, extraThinking = false, planMode = false, forgeMode = false, autoFixStopPlay = true, autoDebugEnabled = true, multiAgent = false;
     let diagDebug = "off"; // "off" | "basic" | "detailed" | "trace"
     try { window.__rsDiagDebug = () => diagDebug; } catch {}
     let workMode = "balanced";
@@ -4316,9 +4302,8 @@
     try { window.__rsPlanMode = () => planMode; } catch {}
     try { window.__rsAutoDebug = () => autoDebugEnabled; } catch {}
     try { window.__rsMultiAgent = () => multiAgent; } catch {}
-    try { window.__rsTweakMode = () => tweakMode; } catch {}
     try {
-      chrome.storage.local.get(["rs-shot-max", "rs-shot-quality", "rsShotFast", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsThinkingLevel", "rsSounds", "rsBgMode", "rsAutoDebug", "rsMultiAgent", "rsTweakMode", "rsDiagDebug"], (r) => {
+      chrome.storage.local.get(["rs-shot-max", "rs-shot-quality", "rsShotFast", "rsAutoFix", "rsExtraThinking", "rsPlanMode", "rsForgeMode", "rsAutoFixStopPlay", "rsWorkMode", "rsThinkingLevel", "rsSounds", "rsBgMode", "rsAutoDebug", "rsMultiAgent", "rsDiagDebug"], (r) => {
         if (!r) return;
         // rs-shot-max is the single source of truth (0 = send originals).
         {
@@ -4326,10 +4311,6 @@
           if (Number.isFinite(m)) shotFast = m > 0;
           else if (typeof r.rsShotFast === "boolean") shotFast = r.rsShotFast;
           try { buildMenu(); } catch {}
-        }
-        if (r.rsVisualRef && typeof r.rsVisualRef === "object") {
-          visualRef = Object.assign(visualRef, r.rsVisualRef);
-          try { window.__rsVisualRef = () => visualRef; } catch {}
         }
         if (typeof r.rsAutoFix === "boolean") autoFixEnabled = r.rsAutoFix;
         if (typeof r.rsExtraThinking === "boolean") {
@@ -4347,7 +4328,6 @@
         if (typeof r.rsMultiAgent === "boolean") {
           multiAgent = r.rsMultiAgent;
           try { window.__rsMultiAgent = () => multiAgent; } catch {}
-    try { window.__rsTweakMode = () => tweakMode; } catch {}
         }
         if (typeof r.rsForgeMode === "boolean") {
           forgeMode = r.rsForgeMode;
@@ -4403,7 +4383,6 @@
         if (changes.rsMultiAgent && typeof changes.rsMultiAgent.newValue === "boolean") {
           multiAgent = changes.rsMultiAgent.newValue;
           try { window.__rsMultiAgent = () => multiAgent; } catch {}
-    try { window.__rsTweakMode = () => tweakMode; } catch {}
           dirty = true;
         }
         if (changes.rsForgeMode && typeof changes.rsForgeMode.newValue === "boolean") {
@@ -4576,15 +4555,6 @@
     function setPlanMode(v){ planMode=!!v; try{chrome.storage.local.set({rsPlanMode: planMode});}catch{}; try{ window.__rsPlanMode = () => planMode; }catch{}; buildMenu(); renderBar(); toast(v ? "Plan mode on — the AI writes a plan, then production code" : "Plan mode off"); markModesChanged(); }
     function setAutoDebug(v){ autoDebugEnabled=!!v; try{chrome.storage.local.set({rsAutoDebug: autoDebugEnabled});}catch{}; try{ window.__rsAutoDebug = () => autoDebugEnabled; }catch{}; buildMenu(); toast(v ? "Automatic Debugger on — new Studio errors are sent to the AI" : "Automatic Debugger off"); markModesChanged(); }
     function setMultiAgent(v){ multiAgent=!!v; try{chrome.storage.local.set({rsMultiAgent: multiAgent});}catch{}; try{ window.__rsMultiAgent = () => multiAgent; }catch{}; buildMenu(); toast(v ? "Multi-Agent on — planner, builder, reviewer, debugger" : "Multi-Agent off"); markModesChanged(); }
-    function setTweakMode(v) {
-      tweakMode = !!v;
-      try { chrome.storage.local.set({ rsTweakMode: tweakMode }); } catch {}
-      try { window.__rsTweakMode = () => tweakMode; } catch {}
-      A.forceSysResend = true;
-      buildMenu();
-      toast(v ? "Tweak Mode (Rule Reinforcement) on" : "Tweak Mode off");
-      markModesChanged();
-    }
     function setForgeMode(v){ forgeMode=!!v; try{chrome.storage.local.set({rsForgeMode: forgeMode});}catch{}; try{ document.documentElement.setAttribute("data-rs-forge", forgeMode?"1":"0"); window.__rsForge = () => forgeMode; }catch{}; buildMenu(); markModesChanged(); }
     // Toggling a mode mid-session must reach the AI on the NEXT turn, not ~12
     // results later: force the full system prompt (which now carries the
@@ -4972,11 +4942,6 @@
               <span class="rs-tgl-sub">Planner → builder → reviewer → debugger. Call or_agent to hand off.</span></span>
               <span class="rs-tgl ${multiAgent ? "on" : ""}"></span>
             </div>
-            <div class="rs-tgl-row" data-mode="tweakmode" role="switch" aria-checked="${tweakMode}" tabindex="0">
-              <span class="rs-tgl-info"><span class="rs-tgl-name">Tweak Mode (Rule Reinforcement)</span>
-              <span class="rs-tgl-sub">Continuously reminds and enforces core rules (mathematics, strict Luau, server authority, memory cleanup, mobile support) on repeated long prompts.</span></span>
-              <span class="rs-tgl ${tweakMode ? "on" : ""}"></span>
-            </div>
             <div class="rs-tgl-row" data-mode="sounds" role="switch" aria-checked="${soundOn}" tabindex="0">
               <span class="rs-tgl-info"><span class="rs-tgl-name">Sound effects</span>
               <span class="rs-tgl-sub">Chime when the agent starts, finishes, or errors.</span></span>
@@ -4992,55 +4957,6 @@
             </div>
           </section>
             
-                    <section class="rs-menu-sec" id="rs-vref-sec">
-            <div class="rs-sec-label">
-              <span>Visual Reference Target</span>
-              <button type="button" class="rs-vref-toggle-btn ${visualRef.enabled !== false ? "on" : "off"}" id="rs-vref-toggle">
-                ${visualRef.enabled !== false ? "Enabled" : "Disabled"}
-              </button>
-            </div>
-            <div class="rs-menu-note">Set a reference image and target mode. When enabled, the AI calculates strict mathematical proportions, UDim2 ratios, and alignments.</div>
-            
-            <div class="rs-ref-mode-row">
-              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "gui" ? "on" : ""}" id="rs-ref-mode-gui" title="Reference for GUI (HUDs, Menus, Inventory, Frames)">
-                <span>🖥️ GUI Layout</span>
-              </button>
-              <button type="button" class="rs-ref-mode-btn ${visualRef.mode === "build" ? "on" : ""}" id="rs-ref-mode-build" title="Reference for 3D Builds, Models, Props">
-                <span>🏰 Build / Model</span>
-              </button>
-            </div>
-
-            ${visualRef.active && visualRef.preview ? `
-              <div class="rs-ref-card">
-                <div class="rs-ref-card-body">
-                  <div class="rs-ref-preview-wrap">
-                    <img class="rs-ref-preview-img" src="${visualRef.preview}" alt="Reference">
-                  </div>
-                  <div class="rs-ref-card-info">
-                    <span class="rs-ref-card-title" title="${esc(visualRef.name)}">${esc(visualRef.name || "Reference Image")}</span>
-                    <span class="rs-ref-badge ${visualRef.mode === "build" ? "build" : "gui"}">${visualRef.mode === "build" ? "Build Target" : "GUI Target"}</span>
-                    <span class="rs-ref-meta">${visualRef.width && visualRef.height ? `${visualRef.width}×${visualRef.height} px • ` : ""}Mathematical Spec</span>
-                    <div class="rs-ref-actions">
-                      <button type="button" class="rs-ref-replace-btn" id="rs-ref-replace-btn">Change</button>
-                      <button type="button" class="rs-ref-remove-btn" id="rs-ref-clear-btn">Remove</button>
-                    </div>
-                  </div>
-                </div>
-                <input id="rs-ref-notes" class="rs-mcp-field" placeholder="Optional notes (e.g. ignore background, exact 400x300 canvas)" value="${esc(visualRef.notes || "")}" />
-              </div>
-            ` : `
-              <div class="rs-ref-dropzone" id="rs-ref-dropzone" tabindex="0" role="button">
-                <div class="rs-ref-dropzone-inner">
-                  <span class="rs-ref-drop-icon">🖼️</span>
-                  <div class="rs-ref-drop-text">
-                    <b>Drop reference image here</b> or <u>browse</u>
-                  </div>
-                </div>
-              </div>
-            `}
-            <input type="file" id="rs-ref-file-input" accept="image/*,.png,.jpg,.jpeg,.webp" style="display:none;" />
-          </section>
-
                     <section class="rs-menu-sec" id="rs-diag-sec">
             <div class="rs-sec-label"><span>Diagnostic Debug System</span></div>
             <div class="rs-menu-note">Embeds structured runtime observability directly into scripts (no separate module). Tracks earnings/losses, trajectories, state transitions, and pre-failure histories without Output spam.</div>
@@ -5238,7 +5154,6 @@
           else if(m==="plan") setPlanMode(!planMode);
           else if(m==="autodebug") setAutoDebug(!autoDebugEnabled);
           else if(m==="multiagent") setMultiAgent(!multiAgent);
-          else if(m==="tweakmode") setTweakMode(!tweakMode);
           else if(m==="fastshots") setShotFast(!shotFast);
           else if(m==="sounds") { setSounds(!soundOn); try { buildMenu(); toast(soundOn ? "Sound effects on" : "Sound effects off"); if (soundOn) playSfx("ok"); } catch {} }
         };
@@ -5254,70 +5169,7 @@
       if (refModeGuiBtn) refModeGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
       if (refModeBuildBtn) refModeBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
 
-      // ── Visual Reference settings events ──
-      const refToggleBtn = menuEl.querySelector("#rs-vref-toggle");
-      if (refToggleBtn) {
-        refToggleBtn.addEventListener("click", () => {
-          const next = visualRef.enabled === false ? true : false;
-          setVisualRefEnabled(next);
-        });
-      }
-      const refGuiBtn = menuEl.querySelector("#rs-ref-mode-gui");
-      const refBuildBtn = menuEl.querySelector("#rs-ref-mode-build");
-      if (refGuiBtn) refGuiBtn.addEventListener("click", () => setVisualRefMode("gui"));
-      if (refBuildBtn) refBuildBtn.addEventListener("click", () => setVisualRefMode("build"));
-
-      const refFileInput = menuEl.querySelector("#rs-ref-file-input");
-      const refDropzone = menuEl.querySelector("#rs-ref-dropzone");
-      const refReplaceBtn = menuEl.querySelector("#rs-ref-replace-btn");
-      const refClearBtn = menuEl.querySelector("#rs-ref-clear-btn");
-      const refNotesInput = menuEl.querySelector("#rs-ref-notes");
-
-      if (refNotesInput) {
-        refNotesInput.addEventListener("change", () => {
-          visualRef.notes = refNotesInput.value.trim();
-          try { window.__rsVisualRef = () => visualRef; } catch {}
-          try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
-        });
-      }
-
-      if (refClearBtn) {
-        refClearBtn.addEventListener("click", () => clearVisualRef());
-      }
-
-      if (refReplaceBtn && refFileInput) {
-        refReplaceBtn.addEventListener("click", () => refFileInput.click());
-      }
-
-      if (refDropzone && refFileInput) {
-        refDropzone.addEventListener("click", () => refFileInput.click());
-        refDropzone.addEventListener("dragover", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          refDropzone.classList.add("dragover");
-        });
-        refDropzone.addEventListener("dragleave", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          refDropzone.classList.remove("dragover");
-        });
-        refDropzone.addEventListener("drop", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          refDropzone.classList.remove("dragover");
-          const files = e.dataTransfer && e.dataTransfer.files;
-          if (files && files.length) setVisualRefImage(files[0]);
-        });
-      }
-
-      if (refFileInput) {
-        refFileInput.addEventListener("change", (e) => {
-          const files = e.target.files;
-          if (files && files.length) setVisualRefImage(files[0]);
-        });
-      }
-
-            // ── Diagnostic Debug System buttons ──
+      // ── Diagnostic Debug System buttons ──
       menuEl.querySelectorAll(".rs-diag-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const lvl = btn.getAttribute("data-diag");
@@ -5872,92 +5724,7 @@ let cardsUiStyle = "modern";
         ref: "STYLE BIBLE — CARTOON. Palette: sky 120,200,255 / orange 255,140,60 / cream 255,244,214 / line-black 20,20,20. UICorner 12. UIStroke 3–4px black (cel outline). Font=FredokaOne or GothamBlack. Flat fills, no realistic gradients. Bubbly shapes. Feels like a sticker book."
       }
     };
-        function shrinkRefDataUrl(url, maxDim = 800) {
-      return new Promise((resolve) => {
-        try {
-          const img = new Image();
-          img.onload = () => {
-            try {
-              let w = img.width, h = img.height;
-              if (w > maxDim || h > maxDim) {
-                const s = maxDim / Math.max(w, h);
-                w = Math.round(w * s); h = Math.round(h * s);
-              }
-              const c = document.createElement("canvas");
-              c.width = w; c.height = h;
-              const ctx = c.getContext("2d");
-              ctx.drawImage(img, 0, 0, w, h);
-              resolve({
-                dataUrl: c.toDataURL("image/jpeg", 0.82),
-                width: w,
-                height: h,
-                origW: img.width,
-                origH: img.height
-              });
-            } catch (e) { resolve({ dataUrl: url, width: img.width || 0, height: img.height || 0 }); }
-          };
-          img.onerror = () => resolve({ dataUrl: url, width: 0, height: 0 });
-          img.src = url;
-        } catch (e) { resolve({ dataUrl: url, width: 0, height: 0 }); }
-      });
-    }
-
-    async function setVisualRefImage(file) {
-      if (!file) return;
-      try {
-        const rawUrl = await readUiFile(file);
-        if (!rawUrl) return;
-        const shrunk = await shrinkRefDataUrl(rawUrl, 800);
-        const m = String(shrunk.dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
-        if (!m) return;
-        visualRef.active = true;
-        visualRef.mimeType = m[1];
-        visualRef.data = m[2];
-        visualRef.preview = shrunk.dataUrl;
-        visualRef.name = file.name || "Reference Image";
-        visualRef.width = shrunk.width;
-        visualRef.height = shrunk.height;
-        try { window.__rsVisualRef = () => visualRef; } catch {}
-        try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
-        buildMenu();
-        toast("Visual reference saved: " + (visualRef.mode === "build" ? "Build / 3D Model" : "GUI"));
-      } catch (e) {
-        toast("Failed to load reference image");
-      }
-    }
-
-    function clearVisualRef() {
-      visualRef.active = false;
-      visualRef.data = "";
-      visualRef.preview = "";
-      visualRef.name = "";
-      visualRef.notes = "";
-      visualRef.width = 0;
-      visualRef.height = 0;
-      try { window.__rsVisualRef = () => visualRef; } catch {}
-      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
-      buildMenu();
-      toast("Visual reference cleared");
-    }
-
-    function setVisualRefEnabled(on) {
-      visualRef.enabled = !!on;
-      try { window.__rsVisualRef = () => visualRef; } catch {}
-      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
-      buildMenu();
-      toast("Visual Reference " + (visualRef.enabled ? "Enabled" : "Disabled"));
-    }
-
-    function setVisualRefMode(mode) {
-      if (mode !== "gui" && mode !== "build") return;
-      visualRef.mode = mode;
-      try { window.__rsVisualRef = () => visualRef; } catch {}
-      try { chrome.storage.local.set({ rsVisualRef: visualRef }); } catch {}
-      buildMenu();
-      toast("Reference target set to " + (mode === "build" ? "Build / 3D Model" : "GUI"));
-    }
-
-    function setDiagDebug(level) {
+        function setDiagDebug(level) {
       if (!["off", "basic", "detailed", "trace"].includes(level)) return;
       diagDebug = level;
       try { window.__rsDiagDebug = () => diagDebug; } catch {}
@@ -7051,8 +6818,10 @@ function renderCards(panel) {
     // we fall back to the floating bar rather than risk overlapping its layout.
     function computeBarMount() {
       if (!P.barMount) return null;
-      const m = P.barMount();
-      return (m && m.parent && m.parent.isConnected) ? m : null;
+      try {
+        const m = P.barMount();
+        return (m && m.parent && m.parent.isConnected) ? m : null;
+      } catch (e) { try { log("barMount threw", e); } catch {} return null; }
     }
 
     // Floating fallback geometry (used only when no inline mount is available).
@@ -7061,15 +6830,23 @@ function renderCards(panel) {
     // Anchored mode bookkeeping: the composer element whose top padding we are
     // borrowing to seat the bar (see the anchored branch below). Cleared when we
     // leave anchored mode so the site's composer returns to its normal layout.
-    let anchorPadEl = null;
+    let anchorPadEl = null, inlineWidenEl = null;
     function clearAnchorPad() {
-      if (anchorPadEl) { try { anchorPadEl.style.paddingTop = ""; } catch {} anchorPadEl = null; }
+      if (anchorPadEl) { try { anchorPadEl.style.paddingTop = ""; anchorPadEl.style.maxWidth = ""; anchorPadEl.style.width = ""; anchorPadEl.style.marginLeft = ""; anchorPadEl.style.marginRight = ""; } catch {} anchorPadEl = null; }
+      if (inlineWidenEl) { try { inlineWidenEl.style.maxWidth = ""; inlineWidenEl.style.width = ""; inlineWidenEl.style.marginLeft = ""; inlineWidenEl.style.marginRight = ""; } catch {} inlineWidenEl = null; }
     }
 
-    // Position the floating "⚠ unstable" pill just above the bar's left edge.
+    // Inline unstable pill lives inside the bar — no floating positioning needed.
+    // Keep it visible when the bar is visible and the provider is marked unstable.
     function placeUnstable() {
       const u = unstableEl;
       if (!u) return;
+      // If it's the inline pill, just ensure it reflects P.unstableWarning and bar visibility
+      if (u.id === "rs-unstable-inline") {
+        const shouldShow = !!P.unstableWarning && bar && bar.style.display !== "none" && bar.getBoundingClientRect().width > 0;
+        u.hidden = !shouldShow;
+        return;
+      }
       if (!bar || bar.style.display === "none") { if (!u.hidden) u.hidden = true; return; }
       const br = bar.getBoundingClientRect();
       if (!br.width) { if (!u.hidden) u.hidden = true; return; }
@@ -7077,6 +6854,86 @@ function renderCards(panel) {
       const uh = u.offsetHeight || 20;
       u.style.left = Math.round(br.left) + "px";
       u.style.top = Math.round(Math.max(4, br.top - uh - 5)) + "px";
+    }
+
+    // The cards fab is a fixed SQUARE floating left of the chatbox, vertically
+    // centered on the composer card (barAnchor = the rounded chatbox on every
+    // site; falls back to composerFrame/editor/bar strip). Re-measured every
+    // rAF tick (1-frame lag).
+    const FAB_SIZE = 52;
+    let fabThemeTick = 0, fabActivityTick = 0;
+    function parseRgb(str) {
+      const m = str && str.match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const p = m[1].split(",").map((s) => parseFloat(s));
+      if (p.length < 3 || p.some((n) => isNaN(n))) return null;
+      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    }
+    // Mirror the host chatbox surface onto the FAB so it reads as native
+    // chrome on every site: sample the anchor's computed background (walking
+    // up past transparent shells), expose it as CSS custom properties (so
+    // :hover rules still work), and tag light/dark for icon contrast.
+    function syncFabTheme(fit) {
+      try {
+        let el = fit, bg = null, hops = 0;
+        while (el && hops < 5) {
+          const c = parseRgb(getComputedStyle(el).backgroundColor);
+          if (c && c.a >= 0.04) { bg = c; break; }
+          el = el.parentElement; hops++;
+        }
+        if (!bg) { // nothing solid found — back to the default glass
+          cardsBtn.style.removeProperty("--fab-bg");
+          cardsBtn.style.removeProperty("--fab-ring");
+          cardsBtn.removeAttribute("data-lum");
+          return;
+        }
+        const lum = 0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b;
+        const light = lum > 150;
+        const mix = (v) => Math.round(Math.max(0, Math.min(255, v)));
+        const ring = light ? "rgba(15,23,42,0.14)" : "rgba(255,255,255,0.10)";
+        const tint = light
+          ? `rgba(${mix(bg.r - 8)},${mix(bg.g - 8)},${mix(bg.b - 8)},${Math.min(1, bg.a)})`
+          : `rgba(${mix(bg.r + 10)},${mix(bg.g + 10)},${mix(bg.b + 12)},${Math.min(1, bg.a + 0.06)})`;
+        cardsBtn.style.setProperty("--fab-bg", tint);
+        cardsBtn.style.setProperty("--fab-ring", ring);
+        cardsBtn.setAttribute("data-lum", light ? "light" : "dark");
+      } catch {}
+    }
+    function placeCardsFab() {
+      if (!cardsBtn || !bar) return;
+      // Cards FAB is ALWAYS visible now: RS/US open the mechanic library,
+      // AgentScript opens the session summary + Danger zone. Hiding it made
+      // half the UI feel missing; everything inside degrades gracefully.
+      const br = bar.getBoundingClientRect();
+      if (bar.style.display === "none" || !br.width) {
+        cardsBtn.style.display = "none";
+        return;
+      }
+      cardsBtn.style.display = "";
+      let fit = null;
+      try { fit = (P.barAnchor && P.barAnchor()) || null; } catch {}
+      if (!fit || !fit.isConnected) { try { fit = (P.composerFrame && P.composerFrame()) || null; } catch {} }
+      if (!fit || !fit.isConnected) { fit = (P.getEditor && P.getEditor()) || null; }
+      if (!fit || !fit.isConnected) {
+        fit = bar.parentElement;
+        if (fit === root || fit === document.documentElement) fit = null;
+      }
+      let fr = fit ? fit.getBoundingClientRect() : null;
+      if (!fr || !fr.height || fr.height < br.height) fr = br;
+      let left = fr.left - FAB_SIZE - 10;
+      if (left < 8) left = 8;
+      const top = fr.top + (fr.height - FAB_SIZE) / 2;
+      cardsBtn.style.left = Math.round(left) + "px";
+      cardsBtn.style.top = Math.round(top) + "px";
+      // Theme refresh (~every 0.5s) — cheap enough, adapts to site theme flips.
+      fabThemeTick++;
+      if (fit && fabThemeTick % 30 === 1) syncFabTheme(fit);
+      // Keep Activity timestamps/results fresh while the panel sits open
+      // (AgentScript session view refreshes too — its "ago" stamps go stale).
+      if (cardsPanel && !cardsPanel.hidden && (cardsTab === "activity" || activeEngine() === "local") && recentCards.length) {
+        fabActivityTick++;
+        if (fabActivityTick % 300 === 0) renderCards(cardsPanel);
+      }
     }
 
     function placeBar() {
@@ -7098,6 +6955,7 @@ function renderCards(panel) {
       // bar's current rect every frame - works in all bar modes since it only
       // reads where the bar ended up. One frame of lag is imperceptible.
       placeUnstable();
+      placeCardsFab();
 
       // While a bot-check challenge OR a blocking modal (login / consent) is on
       // screen, get fully out of the way: the (often transparent) anchored bar is
@@ -7208,8 +7066,6 @@ function renderCards(panel) {
       }
     }
 
-    // Called by the core's sweep + after state changes: refresh the bar content.
-    // (Positioning runs continuously in placeBar; this only updates what's shown.)
     function updateStartGate() { renderBar(); }
 
     // Masks the input box while the extension types/sends, so the copied text

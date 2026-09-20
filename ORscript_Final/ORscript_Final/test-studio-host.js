@@ -264,32 +264,9 @@ ok("flipping it applies to the NEXT capture - no extension reload",
 ok("the toggle explains itself in one line",
   mainJS.includes("Resize captures over 350 KB to 1400 px before upload"));
 
-// ── Visual Reference Target in Settings ───────────────────────────────────
+// ── Diagnostic Debug System in Settings ───────────────────────────────────
 const cfgJS = fs.readFileSync(path.join("core", "config.js"), "utf8");
 const css = fs.readFileSync("overlay.css", "utf8");
-ok("Settings has a Visual Reference dropzone and GUI/Build mode selectors",
-  mainJS.includes('id="rs-vref-sec"') &&
-  mainJS.includes('id="rs-ref-dropzone"') &&
-  mainJS.includes('id="rs-ref-mode-gui"') &&
-  mainJS.includes('id="rs-ref-mode-build"'));
-
-ok("Visual reference state is saved to and restored from chrome.storage.local",
-  mainJS.includes('chrome.storage.local.set({ rsVisualRef: visualRef })') &&
-  mainJS.includes('r.rsVisualRef && typeof r.rsVisualRef === "object"'));
-
-ok("System prompt includes persistent visual reference directive with math accuracy rules",
-  cfgJS.includes("━━━ PERSISTENT VISUAL REFERENCE:") &&
-  cfgJS.includes("GUI REPRODUCTION RULES (STRICT MATHEMATICAL CALCULATIONS)") &&
-  cfgJS.includes("BUILD REPRODUCTION RULES (MATHEMATICALLY ACCURATE)") &&
-  cfgJS.includes("EXACT UDim2 MATHEMATICS"));
-
-ok("Overlay CSS styles Visual Reference dropzone, mode buttons, badges and cards",
-  css.includes(".rs-ref-dropzone") &&
-  css.includes(".rs-ref-mode-btn") &&
-  css.includes(".rs-ref-badge.gui") &&
-  css.includes(".rs-ref-badge.build"));
-
-// ── Diagnostic Debug System in Settings ───────────────────────────────────
 ok("Settings has Diagnostic Debugging section with Off/Basic/Detailed/Trace levels",
   mainJS.includes('id="rs-diag-sec"') &&
   mainJS.includes('data-diag="off"') &&
@@ -341,24 +318,6 @@ ok("System prompt enforces universal mobile and cross-platform support",
   cfgJS.includes("ContextActionService:BindAction") &&
   cfgJS.includes("MOBILE & CROSS-PLATFORM: all UI and controls must work on mobile"));
 
-// ── Tweak Mode & Stud Build Knowledge Base ────────────────────────────────
-ok("System prompt contains comprehensive Roblox Stud Build knowledge base",
-  cfgJS.includes("ROBLOX STUD BUILD & RETRO AESTHETIC SPECIFICATION:") &&
-  cfgJS.includes("UNYIELDING SPATIAL GRID") &&
-  cfgJS.includes("HIERARCHICAL PRIMITIVE DECOMPOSITION") &&
-  cfgJS.includes("SURFACE TEXTURE MANIPULATION") &&
-  cfgJS.includes("LOW-FIDELITY MATERIAL & PALETTE"));
-
-ok("Settings has Tweak Mode toggle row in Agent Modes",
-  mainJS.includes('data-mode="tweakmode"') &&
-  mainJS.includes("Tweak Mode (Rule Reinforcement)") &&
-  mainJS.includes("setTweakMode"));
-
-ok("Tweak Mode is persisted in storage and forces prompt re-statement",
-  mainJS.includes("chrome.storage.local.set({ rsTweakMode: tweakMode })") &&
-  mainJS.includes("A.forceSysResend = true") &&
-  cfgJS.includes("TWEAK MODE ACTIVE (RULES RE-STATEMENT & RIGOROUS ENFORCEMENT)"));
-
 ok("Settings menu has a dedicated 'Figma Connect' tab",
   mainJS.includes('data-tab="figma"') &&
   mainJS.includes('Figma Connect') &&
@@ -367,16 +326,6 @@ ok("Settings menu has a dedicated 'Figma Connect' tab",
 ok("Overlay CSS styles Figma Connect tab and contained boxes",
   css.includes('.rs-menu-tabs-bar') &&
   css.includes('.rs-figma-box'));
-
-ok("background.js handles figma_connect and figma_disconnect messages",
-  bg.includes('figma_connect') && bg.includes('figma_disconnect'));
-
-ok("or-figma-plugin ships manifest.json and code.js for Figma desktop",
-  fs.existsSync(path.join(__dirname, "or-figma-plugin", "manifest.json")) &&
-  fs.existsSync(path.join(__dirname, "or-figma-plugin", "code.js")));
-
-ok("System prompt includes Figma to Roblox Studio automated pipeline instructions",
-  cfgJS.includes("FIGMA TO ROBLOX STUDIO PIPELINE"));
 
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
