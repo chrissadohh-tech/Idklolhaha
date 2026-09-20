@@ -359,5 +359,18 @@ ok("Tweak Mode is persisted in storage and forces prompt re-statement",
   mainJS.includes("A.forceSysResend = true") &&
   cfgJS.includes("TWEAK MODE ACTIVE (RULES RE-STATEMENT & RIGOROUS ENFORCEMENT)"));
 
+ok("Settings menu has Figma Bridge toggle switch in Agent Modes",
+  mainJS.includes('data-mode="figmabridge"') && mainJS.includes('Figma Bridge'));
+
+ok("background.js handles figma_connect and figma_disconnect messages",
+  bg.includes('figma_connect') && bg.includes('figma_disconnect'));
+
+ok("or-figma-plugin ships manifest.json and code.js for Figma desktop",
+  fs.existsSync(path.join(__dirname, "or-figma-plugin", "manifest.json")) &&
+  fs.existsSync(path.join(__dirname, "or-figma-plugin", "code.js")));
+
+ok("System prompt includes Figma to Roblox Studio automated pipeline instructions",
+  cfgJS.includes("FIGMA TO ROBLOX STUDIO PIPELINE"));
+
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
