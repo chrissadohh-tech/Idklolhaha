@@ -313,23 +313,33 @@ const RSProvider = (() => {
   // ancestor of the textarea that also holds the send button.
   // It is a flex column whose second child is the buttons row (send, web, DeepThink),
   // so adding the bar as its FIRST child reflows cleanly and spans the full input width.
-  function barMount() {
+    // Where the core anchors its floating/padding bar if DOM-injection is avoided
+  function barAnchor() {
     const ta = getEditor();
     if (!ta) return null;
-    const send = document.querySelector(S.sendBtn);
+    return ta.closest("form") || ta.closest("[class*='chat-input']") || ta.closest("[class*='composer']") || ta.parentElement;
+  }
+
+function barMount() {
+    const ta = getEditor();
+    if (!ta) return null;
+    const send = getSendBtn() || document.querySelector(S.sendBtn);
     let box = ta.parentElement;
     while (box && box !== document.body) {
       const holdsSend = !send || box.contains(send);
-      if (holdsSend && box.offsetWidth > 240) break;
+      // The composer card must contain the textarea and the send button, and be at least 260px wide
+      if (holdsSend && (box.offsetWidth > 260 || (box.getBoundingClientRect && box.getBoundingClientRect().width > 260))) {
+        break;
+      }
       box = box.parentElement;
     }
-    if (!box || box === document.body) box = ta.parentElement;
+    if (!box || box === document.body) {
+      box = ta.closest("form") || ta.closest("[class*='chat-input']") || ta.parentElement;
+    }
     if (!box) return null;
-    // Insert before the first REAL child (skip our own bar if already mounted,
-    // otherwise we'd try to insert the bar before itself every frame).
     let before = box.firstElementChild;
     if (before && before.id === "rs-bar") before = before.nextElementSibling;
-    return { parent: box, before, inside: true }; // lives INSIDE the input box
+    return { parent: box, before, inside: true };
   }
 
   // ── Composer toggles: search OFF, legacy DeepThink ON ────────────────────
@@ -959,7 +969,7 @@ const RSProvider = (() => {
     assistantCount, userCount, lastAssistant, lastAssistantId, itemKey, readAssistant,
     streamLen, snapshot,
     // composer / state
-    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount,
+    getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount, barAnchor,
     setInputLock, typeAndSend, stopGeneration,
     isGenerating, isBusyNow, isHardGenerating, genDebug,
     enforceComposer, ensureComposerReady,

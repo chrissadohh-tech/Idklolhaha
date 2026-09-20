@@ -6984,9 +6984,18 @@ function renderCards(panel) {
         bar.style.top = Math.max(8, Math.round(window.innerHeight - bh - 16)) + "px";
         return;
       }
+      const bh = bar.offsetHeight || 40;
+      // If the matched element is stuck near the top of the window (< 50px) while the viewport is tall,
+      // it is a header/sidebar stray input, NOT the bottom composer. Dock to bottom.
+      if (r.top < 50 && window.innerHeight > 400) {
+        const w = Math.min(window.innerWidth - 24, BAR_MAX_W);
+        bar.style.width = w + "px";
+        bar.style.left = Math.round((window.innerWidth - w) / 2) + "px";
+        bar.style.top = Math.max(8, Math.round(window.innerHeight - bh - 16)) + "px";
+        return;
+      }
       const w = Math.min(r.width, BAR_MAX_W);
       const left = Math.round(r.left + (r.width - w) / 2);
-      const bh = bar.offsetHeight || 40;
       const top = Math.max(4, Math.round(r.top - bh - BAR_GAP));
       bar.style.width = w + "px";
       bar.style.left = left + "px";
