@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; padding: 14px; background: #18181b; color: #f4f4f5; font-size: 12px;
+    }
+    .header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .badge {
+      width: 10px; height: 10px; border-radius: 50%; background: #ef4444;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+    }
+    .badge.connected {
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+    }
+    .title { font-weight: 700; font-size: 13px; color: #fff; }
+    .status { font-size: 11px; color: #a1a1aa; margin-bottom: 12px; line-height: 1.4; }
+    .btn {
+      width: 100%; padding: 8px 12px; background: #6366f1; color: #fff; border: none;
+      border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.15s;
+    }
+    .btn:hover { background: #4f46e5; }
+    .btn-export {
+      margin-top: 8px; background: #059669;
+    }
+    .btn-export:hover { background: #047857; }
+    .log-box {
+      margin-top: 10px; padding: 8px; background: #09090b; border-radius: 6px;
+      font-family: monospace; font-size: 10px; height: 85px; overflow-y: auto; color: #d4d4d8;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div id="dot" class="badge"></div>
+    <div class="title">OR Figma Bridge</div>
+  </div>
+  <div id="status-text" class="status">Connecting to OR Agent on ws://127.0.0.1:9878...</div>
+  <button id="reconnect-btn" class="btn">Reconnect Bridge</button>
+  <button id="export-btn" class="btn btn-export">Export Selection to Studio</button>
+  <div id="log" class="log-box">Ready.</div>
+
+  <script>
+    let ws = null;
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("status-text");
+    const logBox = document.getElementById("log");
+
+    function log(msg) {
+      const line = document.createElement("div");
+      line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function connect() {
+      try {
+        log("Dialing ws://127.0.0.1:9878...");
+        ws = new WebSocket("ws://127.0.0.1:9878");
+        ws.onopen = () => {
+          dot.className = "badge connected";
+          statusText.textContent = "Live connected to OR Agent (Port 9878)";
+          log("Connected! Listening for AI build commands.");
+          parent.postMessage({ pluginMessage: { type: "connected" } }, "*");
+        };
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            log("Received cmd: " + (data.command || data.type));
+            parent.postMessage({ pluginMessage: { type: "execute_cmd", payload: data } }, "*");
+          } catch(err) {
+            log("Err parsing cmd: " + err);
+          }
+        };
+        ws.onclose = () => {
+          dot.className = "badge";
+          statusText.textContent = "Disconnected. Make sure OR Agent is running.";
+          log("Connection closed.");
+        };
+        ws.onerror = (e) => {
+          dot.className = "badge";
+          statusText.textContent = "Bridge server not found on port 9878.";
+          log("WebSocket error.");
+        };
+      } catch(err) {
+        log("Connect err: " + err);
+      }
+    }
+
+    document.getElementById("reconnect-btn").onclick = () => connect();
+    document.getElementById("export-btn").onclick = () => {
+      parent.postMessage({ pluginMessage: { type: "export_selection" } }, "*");
+    };
+
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+      if (msg.type === "cmd_result" && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg.result));
+        log("Sent result back: " + (msg.result.ok ? "OK" : "ERR"));
+      } else if (msg.type === "log") {
+        log(msg.text);
+      }
+    };
+
+    connect();
+  </script>
+</body>
+</html>
