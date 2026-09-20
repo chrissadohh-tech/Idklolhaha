@@ -3920,11 +3920,13 @@
           <button id="rs-extra" hidden title="Extra Thinking — the AI reviews its own work">🧠 Extra</button>
           <button id="rs-undo" hidden title="Undo last Studio change the agent made">Undo</button>
           <button id="rs-discord" aria-label="Discord" title="OR Discord"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></button>
+          <button id="rs-mcp-btn" aria-label="MCP Bridges & Servers" title="MCP Bridges & External Tools (Blender, Figma, Studio)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="M12 18v4"/><path d="M4.93 4.93l4.24 4.24"/><path d="M14.83 14.83l4.24 4.24"/><path d="M2 12h6"/><path d="M18 12h4"/><circle cx="12" cy="12" r="4"/></svg></button>
           <button id="rs-settings-btn" aria-label="Settings" title="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
           </div>
         </div>
         <div id="rs-cards-panel" hidden></div>
         <div id="rs-menu" hidden></div>
+        <div id="rs-mcp-menu" class="rs-menu-panel" hidden></div>
         <div id="rs-approve" hidden>
           <div class="rs-approve-card">
             <div class="rs-approve-kicker">Ask mode</div>
@@ -4092,6 +4094,8 @@
         });
       }
       menuEl = root.querySelector("#rs-menu");
+      mcpMenuEl = root.querySelector("#rs-mcp-menu");
+      const mcpBtn = root.querySelector("#rs-mcp-btn");
       bar.classList.add(`rs-prov-${P.id}`); // lets CSS tune per-site (e.g. font)
       // Provider hook on <html> so overlay.css can tune site-specific CHIP layout
       // (not just the bar). Meta's turn root is full-width with the reply in a
@@ -4145,7 +4149,22 @@
           });
         }
       };
-      supportBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(true); });
+      supportBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (mcpMenuEl) mcpMenuEl.hidden = true;
+        toggleMenu(true);
+      });
+      if (mcpBtn) {
+        mcpBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (menuEl) menuEl.hidden = true;
+          mcpMenuEl.hidden = !mcpMenuEl.hidden;
+          if (!mcpMenuEl.hidden) {
+            buildMcpMenu();
+            mcpMenuEl.scrollTop = 0;
+          }
+        });
+      }
       // Engine toggle (Roblox ↔ AgentScript ↔ Animation)
       const engineEl = root.querySelector("#rs-engine");
       currentEngine = "roblox";
@@ -4819,6 +4838,171 @@
     // ── The "more" menu (⋯) ─────────────────────────────────────────────────
     // One popover holding every secondary control: other AI sites, the custom
     // prompt, and support (Robux). Opens above the bar.
+    
+    function buildMcpMenu() {
+      if (!mcpMenuEl) return;
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      const mergedServers = mergedMcpServers();
+      let mcpList =
+        `<div class="rs-mcp-item rs-mcp-item-primary"><div class="rs-mcp-info"><span class="rs-mcp-name">Roblox Studio</span><span class="rs-mcp-url">primary - probe status above</span></div></div>`;
+      mergedServers.forEach((s) => {
+        const healthClass = s.alive === true ? "on" : s.alive === false ? "off" : "unknown";
+        const healthTitle = s.alive === true ? `${s.tools || 0} tools available` : s.alive === false ? "offline" : "status unknown";
+        mcpList += `<div class="rs-mcp-item"><span class="rs-mcp-health rs-mcp-health-${healthClass}" title="${healthTitle}"></span><div class="rs-mcp-info"><span class="rs-mcp-name">${esc(s.name)}</span><span class="rs-mcp-url">${esc(s.command || s.id)}</span></div><button class="rs-mcp-remove" data-id="${esc(s.id)}" title="Remove">✕</button></div>`;
+      });
+
+      mcpMenuEl.innerHTML = `
+        <div class="rs-menu-head">
+          <span class="rs-menu-mark" aria-hidden="true"></span>
+          <div class="rs-menu-head-txt">
+            <span class="rs-menu-logo">MCP</span>
+            <span class="rs-menu-tag">External Tools & Bridges</span>
+          </div>
+          <span class="rs-menu-glyph">❖</span>
+        </div>
+
+        <section class="rs-menu-sec">
+          <div class="rs-sec-label"><span>Blender 3D Bridge</span></div>
+          <div class="rs-menu-note">Connect to Blender addon on port 9876. Model, animate, and auto-export into Studio.</div>
+          <div class="rs-blender-card ${blenderConnected() ? "on" : ""}">
+            <div class="rs-blender-top">
+              <span class="rs-blender-mark" aria-hidden="true"></span>
+              <div class="rs-blender-copy">
+                <span class="rs-blender-name">Blender MCP</span>
+                <span class="rs-blender-sub">${blenderConnected() ? "Live — model here, export FBX into Studio." : "Addon running in Blender? N-panel → Start MCP Server, then connect."}</span>
+              </div>
+              <span class="rs-blender-pill">${blenderConnected() ? "on" : "off"}</span>
+            </div>
+            <div class="rs-blender-actions">
+              <button type="button" id="rs-mcp-blender">${blenderConnected() ? "Reconnect Blender" : "Connect Blender"}</button>
+              ${blenderConnected() ? '<button type="button" class="rs-blender-off" id="rs-mcp-blender-off">Disconnect</button>' : ""}
+              <button type="button" class="rs-blender-link" id="rs-blender-site">blender.org</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="rs-menu-sec">
+          <div class="rs-sec-label"><span>Figma Live Bridge</span></div>
+          <div class="rs-menu-note">Live canvas bridge on port 9878. AI designs frames & components in Figma and auto-exports to ScreenGui.</div>
+          <div class="rs-blender-card ${figmaConnectedCached ? "on" : ""}">
+            <div class="rs-blender-top">
+              <span class="rs-blender-mark" aria-hidden="true" style="background:#38bdf8;"></span>
+              <div class="rs-blender-copy">
+                <span class="rs-blender-name">Figma Desktop Plugin</span>
+                <span class="rs-blender-sub">${figmaConnectedCached ? "Live (Port 9878) — AI builds in Figma & auto-exports." : "Import or-figma-plugin/manifest.json in Figma Desktop."}</span>
+              </div>
+              <span class="rs-blender-pill" style="${figmaConnectedCached ? "background:#10b981;color:#fff;" : ""}">${figmaConnectedCached ? "on" : "off"}</span>
+            </div>
+            <div class="rs-blender-actions">
+              <button type="button" id="rs-mcp-figma-toggle">${figmaConnectedCached ? "Disconnect" : "Connect Figma"}</button>
+              <button type="button" id="rs-mcp-figma-export">Export Selection</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="rs-menu-sec">
+          <div class="rs-sec-label"><span>Custom MCP Servers</span></div>
+          <div class="rs-menu-note">Roblox Studio is primary. Add additional local MCP servers below.</div>
+          ${mcpList}
+          <div class="rs-mcp-sep"></div>
+          <input id="rs-mcp-name" class="rs-mcp-field" placeholder="Name, e.g. Sketchfab" />
+          <input id="rs-mcp-url" class="rs-mcp-field" placeholder="Start command, e.g. npx -y @some/mcp-server" />
+          <div class="rs-set-row">
+            <button id="rs-mcp-add">Add server</button>
+            <button id="rs-mcp-repair" title="Restart Studio MCP helper">Repair Studio</button>
+            <span id="rs-mcp-status"></span>
+          </div>
+        </section>
+        <div class="rs-menu-foot">OR External Tools • Port 3000 / 9876 / 9878</div>
+      `;
+
+      // Wire Blender controls in MCP menu
+      const bBtn = mcpMenuEl.querySelector("#rs-mcp-blender");
+      const bOff = mcpMenuEl.querySelector("#rs-mcp-blender-off");
+      const bSite = mcpMenuEl.querySelector("#rs-blender-site");
+      if (bBtn) bBtn.addEventListener("click", () => {
+        bg({ type: "blender_connect" }).then((r) => {
+          if (r && r.ok) {
+            rememberBlender();
+            toast("Blender MCP connected!");
+            playSfx("ok");
+            buildMcpMenu();
+          } else {
+            toast("Blender MCP not found on port 9876.");
+            playSfx("error");
+          }
+        });
+      });
+      if (bOff) bOff.addEventListener("click", () => {
+        disconnectBlender();
+        toast("Blender disconnected");
+        buildMcpMenu();
+      });
+      if (bSite) bSite.addEventListener("click", () => {
+        window.open("https://www.blender.org/download/", "_blank", "noopener");
+      });
+
+      // Wire Figma controls in MCP menu
+      const fBtn = mcpMenuEl.querySelector("#rs-mcp-figma-toggle");
+      const fExport = mcpMenuEl.querySelector("#rs-mcp-figma-export");
+      if (fBtn) fBtn.addEventListener("click", async () => {
+        if (!figmaConnectedCached) {
+          toast("Connecting to Figma Bridge on port 9878…");
+          const res = await bg({ type: "figma_connect" });
+          if (res && res.ok) {
+            figmaConnectedCached = true;
+            try { chrome.storage.local.set({ rsFigmaConnected: true }); } catch {}
+            toast("Figma Bridge connected!");
+            playSfx("ok");
+          } else {
+            toast("Could not reach Figma on port 9878. Is plugin running?");
+            playSfx("error");
+          }
+        } else {
+          await bg({ type: "figma_disconnect" });
+          figmaConnectedCached = false;
+          try { chrome.storage.local.set({ rsFigmaConnected: false }); } catch {}
+          toast("Figma disconnected");
+        }
+        buildMcpMenu();
+      });
+      if (fExport) fExport.addEventListener("click", () => {
+        toast("Exporting Figma selection to Roblox Studio…");
+      });
+
+      // Wire custom MCP Add/Remove
+      const addBtn = mcpMenuEl.querySelector("#rs-mcp-add");
+      const repBtn = mcpMenuEl.querySelector("#rs-mcp-repair");
+      const nameIn = mcpMenuEl.querySelector("#rs-mcp-name");
+      const urlIn = mcpMenuEl.querySelector("#rs-mcp-url");
+      const stat = mcpMenuEl.querySelector("#rs-mcp-status");
+
+      if (addBtn) addBtn.addEventListener("click", () => {
+        const name = (nameIn.value || "").trim();
+        const url = (urlIn.value || "").trim();
+        if (!name || !url) { if (stat) stat.textContent = "Fill name and command"; return; }
+        const s = { id: "mcp_" + Date.now(), name, command: url, alive: true };
+        customMcpServers.push(s);
+        try { chrome.storage.local.set({ rsMcpServers: customMcpServers }); } catch {}
+        nameIn.value = ""; urlIn.value = "";
+        buildMcpMenu();
+      });
+
+      if (repBtn) repBtn.addEventListener("click", () => {
+        toast("Restarting Studio MCP helper…");
+        bg({ type: "studio_mcp_repair" }).then(() => toast("Studio MCP helper restarted"));
+      });
+
+      mcpMenuEl.querySelectorAll(".rs-mcp-remove").forEach((rm) => {
+        rm.addEventListener("click", () => {
+          const id = rm.dataset.id;
+          customMcpServers = customMcpServers.filter((x) => x.id !== id);
+          try { chrome.storage.local.set({ rsMcpServers: customMcpServers }); } catch {}
+          buildMcpMenu();
+        });
+      });
+    }
+
     function buildMenu() {
       const here = (P.displayName || "").toLowerCase();
       const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
@@ -4849,11 +5033,7 @@
       });
       menuEl.innerHTML =
         `<div class="rs-menu-head"><span class="rs-menu-mark" aria-hidden="true"></span><div class="rs-menu-head-txt"><span class="rs-menu-logo">OR</span><span class="rs-menu-tag">v${EXT_VERSION} · ${(OR_THEMES[orTheme]&&OR_THEMES[orTheme].name)||"Night"}</span></div><span class="rs-menu-glyph">${(OR_THEMES[orTheme]&&OR_THEMES[orTheme].glyph)||"☾"}</span></div>
-          <div class="rs-menu-tabs-bar">
-            <button type="button" class="rs-menu-tab-btn ${menuActiveTab === 'settings' ? 'active' : ''}" data-tab="settings">Settings</button>
-            <button type="button" class="rs-menu-tab-btn ${menuActiveTab === 'figma' ? 'active' : ''}" data-tab="figma">Figma Connect</button>
-          </div>
-          <div class="rs-tab-page ${menuActiveTab === 'settings' ? 'active' : ''}" id="rs-tab-settings">
+
          <section class="rs-menu-sec">
            <div class="rs-sec-label"><span>Switch AI</span></div>
            ${sites}
@@ -4993,88 +5173,7 @@
             <textarea id="rs-set-text" rows="4" placeholder="e.g. Always comment your Luau code. Prefer small modular scripts."></textarea>
             <div class="rs-set-row"><button id="rs-set-save">Save</button><span id="rs-set-status"></span></div>
           </section>
-          <section class="rs-menu-sec">
-            <div class="rs-sec-label"><span>MCP servers</span></div>
-              <div class="rs-menu-note">Roblox Studio is primary. Blender talks to the addon already running in Blender (port 9876) — no uv install.</div>
-              <div class="rs-blender-card ${blenderConnected() ? "on" : ""}">
-                <div class="rs-blender-top">
-                  <span class="rs-blender-mark" aria-hidden="true"></span>
-                  <div class="rs-blender-copy">
-                    <span class="rs-blender-name">Blender MCP</span>
-                    <span class="rs-blender-sub">${blenderConnected() ? "Live — model here, export FBX into Studio." : "Addon already in Blender? N-panel → Start MCP Server, then connect. No uv."}</span>
-                  </div>
-                  <span class="rs-blender-pill">${blenderConnected() ? "on" : "off"}</span>
-                </div>
-                <div class="rs-blender-actions">
-                  <button type="button" id="rs-mcp-blender">${blenderConnected() ? "Reconnect Blender" : "Connect Blender"}</button>
-                  ${blenderConnected() ? '<button type="button" class="rs-blender-off" id="rs-mcp-blender-off">Disconnect</button>' : ""}
-                  <button type="button" class="rs-blender-link" id="rs-blender-site">blender.org</button>
-                </div>
-              </div>
-
-           ${mcpList}
-           <div class="rs-mcp-sep"></div>
-            <input id="rs-mcp-name" class="rs-mcp-field" placeholder="Name, e.g. Sketchfab" />
-            <input id="rs-mcp-url" class="rs-mcp-field" placeholder="Start command, e.g. npx -y @some/mcp-server" />
-            <div class="rs-set-row">
-              <button id="rs-mcp-add">Add server</button>
-              <button id="rs-mcp-repair" title="Restart the Studio MCP helper inside or-agent.exe \u2014 fixes 'connected but every command fails' after a Studio update or sleep/resume">Repair Studio link</button>
-              <span id="rs-mcp-status"></span>
-            </div>
-          </section>
-          </div>
-          <div class="rs-tab-page ${menuActiveTab === 'figma' ? 'active' : ''}" id="rs-tab-figma">
-            <section class="rs-menu-sec">
-              <div class="rs-sec-label"><span>Figma Live Connection</span></div>
-              <div class="rs-menu-note">Connect your local Figma Desktop app to Roblox Studio. The AI can inspect selection, design frames, style components, and automatically export them to Roblox Studio ScreenGui.</div>
-              
-              <div class="rs-figma-box">
-                <div class="rs-figma-header">
-                  <div class="rs-figma-status-indicator">
-                    <span class="rs-figma-dot ${figmaConnectedCached ? 'on' : ''}"></span>
-                    <span class="rs-figma-status-text">${figmaConnectedCached ? 'Connected (Port 9878)' : 'Disconnected'}</span>
-                  </div>
-                  <span class="rs-figma-port">ws://127.0.0.1:9878</span>
-                </div>
-                
-                <div class="rs-figma-btn-group">
-                  <button type="button" class="rs-figma-tab-btn primary" id="rs-figma-tab-connect">
-                    ${figmaConnectedCached ? 'Disconnect' : 'Connect Figma'}
-                  </button>
-                  <button type="button" class="rs-figma-tab-btn" id="rs-figma-tab-export" title="Export current Figma selection into Roblox Studio">
-                    Export to Studio
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section class="rs-menu-sec">
-              <div class="rs-sec-label"><span>Companion Plugin Setup</span></div>
-              <div class="rs-figma-steps">
-                <div class="rs-figma-step">
-                  <span class="rs-step-num">1</span>
-                  <span>In Figma Desktop: <b>Plugins → Development → Import plugin from manifest…</b></span>
-                </div>
-                <div class="rs-figma-step">
-                  <span class="rs-step-num">2</span>
-                  <span>Select <code>or-figma-plugin/manifest.json</code> from your ORscript directory.</span>
-                </div>
-                <div class="rs-figma-step">
-                  <span class="rs-step-num">3</span>
-                  <span>Run <b>OR Figma Bridge</b> and click <b>Connect Figma</b> above.</span>
-                </div>
-              </div>
-            </section>
-
-            <section class="rs-menu-sec">
-              <div class="rs-sec-label"><span>AI Capabilities</span></div>
-              <div class="rs-figma-features">
-                <div class="rs-feat-item">✓ <b>Mathematical layout</b> (Auto Layout, hug, fill, padding)</div>
-                <div class="rs-feat-item">✓ <b>Component creation</b> (Buttons, HUDs, Cards, Badges)</div>
-                <div class="rs-feat-item">✓ <b>Instant conversion</b> to Roblox ScreenGui with exact scale ratios</div>
-              </div>
-            </section>
-          </div>
+          
           <div class="rs-menu-foot">OR v${EXT_VERSION} • ${currentEngine==="local"?"AS":currentEngine==="anim"?"AN":"RS"} • ${esc(P.displayName)}</div>`;
       const open = (url) => {
         try {
@@ -6994,6 +7093,12 @@ function renderCards(panel) {
           menuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
           menuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
         }
+        if (mcpMenuEl && !mcpMenuEl.hidden) {
+          const br = bar.getBoundingClientRect();
+          mcpMenuEl.style.right = Math.round(window.innerWidth - br.right + 32) + "px";
+          mcpMenuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
+          mcpMenuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
+        }
         return;
       }
 
@@ -7025,6 +7130,12 @@ function renderCards(panel) {
           menuEl.style.right = Math.round(window.innerWidth - (r.left + r.width)) + "px";
           menuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
           menuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
+        }
+        if (mcpMenuEl && !mcpMenuEl.hidden) {
+          bar.classList.remove("rs-bar-inline");
+          mcpMenuEl.style.right = Math.round(window.innerWidth - (r.left + r.width) + 32) + "px";
+          mcpMenuEl.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
+          mcpMenuEl.style.maxHeight = Math.max(140, Math.round(r.top - 16)) + "px";
         }
         return;
       }
@@ -7063,6 +7174,12 @@ function renderCards(panel) {
         menuEl.style.right = Math.round(window.innerWidth - br.right) + "px";
         menuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
         menuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
+      }
+      if (mcpMenuEl && !mcpMenuEl.hidden) {
+        const br = bar.getBoundingClientRect();
+        mcpMenuEl.style.right = Math.round(window.innerWidth - br.right + 32) + "px";
+        mcpMenuEl.style.bottom = Math.round(window.innerHeight - br.top + 6) + "px";
+        mcpMenuEl.style.maxHeight = Math.max(140, Math.round(br.top - 16)) + "px";
       }
     }
 

@@ -318,14 +318,14 @@ ok("System prompt enforces universal mobile and cross-platform support",
   cfgJS.includes("ContextActionService:BindAction") &&
   cfgJS.includes("MOBILE & CROSS-PLATFORM: all UI and controls must work on mobile"));
 
-ok("Settings menu has a dedicated 'Figma Connect' tab",
-  mainJS.includes('data-tab="figma"') &&
-  mainJS.includes('Figma Connect') &&
-  mainJS.includes('id="rs-tab-figma"'));
+ok("UI has a dedicated MCP Bridges & Servers menu button and panel",
+  mainJS.includes('id="rs-mcp-btn"') &&
+  mainJS.includes('id="rs-mcp-menu"') &&
+  mainJS.includes('buildMcpMenu'));
 
-ok("Overlay CSS styles Figma Connect tab and contained boxes",
-  css.includes('.rs-menu-tabs-bar') &&
-  css.includes('.rs-figma-box'));
+ok("Overlay CSS styles standalone MCP menu panel",
+  css.includes('#rs-mcp-menu') &&
+  css.includes('#rs-mcp-btn'));
 
 if (fails) { console.log(`\n${fails} Studio-host check(s) failed.`); process.exit(1); }
 console.log(`\nStudio-host checks passed (${passes}).`);
