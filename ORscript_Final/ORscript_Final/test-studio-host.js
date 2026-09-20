@@ -359,14 +359,14 @@ ok("Tweak Mode is persisted in storage and forces prompt re-statement",
   mainJS.includes("A.forceSysResend = true") &&
   cfgJS.includes("TWEAK MODE ACTIVE (RULES RE-STATEMENT & RIGOROUS ENFORCEMENT)"));
 
-ok("UI has separate floating draggable Figma Bridge widget",
-  mainJS.includes('id="rs-figma-widget"') &&
-  mainJS.includes('rs-figma-float') &&
-  mainJS.includes('rs-figma-drag-handle'));
+ok("Settings menu has a dedicated 'Figma Connect' tab",
+  mainJS.includes('data-tab="figma"') &&
+  mainJS.includes('Figma Connect') &&
+  mainJS.includes('id="rs-tab-figma"'));
 
-ok("Overlay CSS styles floating draggable Figma widget with bounds",
-  css.includes('#rs-figma-widget') &&
-  css.includes('.rs-figma-float-head'));
+ok("Overlay CSS styles Figma Connect tab and contained boxes",
+  css.includes('.rs-menu-tabs-bar') &&
+  css.includes('.rs-figma-box'));
 
 ok("background.js handles figma_connect and figma_disconnect messages",
   bg.includes('figma_connect') && bg.includes('figma_disconnect'));
